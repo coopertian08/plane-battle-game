@@ -48,9 +48,12 @@ test("keeps the finished game free of starter preview code", async () => {
 
   assert.match(page, /GAME_WIDTH = 480/);
   assert.match(page, /joystick-zone/);
-  assert.match(page, /arrowleft/);
+  assert.match(page, /createClouds/);
+  assert.match(page, /drawAircraft/);
   assert.match(page, /dropBomb/);
+  assert.doesNotMatch(page, /arrowleft|arrowright|arrowup|arrowdown/);
   assert.match(layout, /title:\s*"飞机大战"/);
   assert.match(css, /mobile-controls/);
+  assert.match(css, /pointer:\s*coarse/);
   assert.doesNotMatch(page + layout + css, /SkeletonPreview|codex-preview|Building your site/);
 });

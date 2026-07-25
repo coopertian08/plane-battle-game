@@ -80,12 +80,14 @@ type Explosion = {
   color: string;
 };
 
-type Star = {
+type Cloud = {
   x: number;
   y: number;
-  r: number;
+  w: number;
+  h: number;
   speed: number;
   alpha: number;
+  layer: number;
 };
 
 type Floater = {
@@ -107,7 +109,7 @@ type GameState = {
   enemies: Enemy[];
   powerUps: PowerUp[];
   explosions: Explosion[];
-  stars: Star[];
+  clouds: Cloud[];
   floaters: Floater[];
   score: number;
   bestScore: number;
@@ -186,13 +188,15 @@ function makeId(state: GameState) {
   return state.nextId;
 }
 
-function createStars() {
-  return Array.from({ length: 90 }, () => ({
+function createClouds() {
+  return Array.from({ length: 26 }, () => ({
     x: Math.random() * GAME_WIDTH,
     y: Math.random() * GAME_HEIGHT,
-    r: randomBetween(0.7, 2.2),
-    speed: randomBetween(26, 130),
-    alpha: randomBetween(0.28, 0.9),
+    w: randomBetween(74, 190),
+    h: randomBetween(22, 56),
+    speed: randomBetween(14, 58),
+    alpha: randomBetween(0.18, 0.72),
+    layer: Math.random() > 0.62 ? 2 : 1,
   }));
 }
 
@@ -210,7 +214,7 @@ function createGameState(bestScore: number): GameState {
     enemies: [],
     powerUps: [],
     explosions: [],
-    stars: createStars(),
+    clouds: createClouds(),
     floaters: [],
     score: 0,
     bestScore,
@@ -518,14 +522,16 @@ function dropBomb(state: GameState) {
 function updateGame(state: GameState, dt: number, input: Vector) {
   state.time += dt;
 
-  for (const star of state.stars) {
-    star.y += star.speed * dt * (state.phase === "running" ? 1 : 0.36);
-    if (star.y > GAME_HEIGHT + 5) {
-      star.y = -5;
-      star.x = Math.random() * GAME_WIDTH;
-      star.r = randomBetween(0.7, 2.2);
-      star.speed = randomBetween(26, 130);
-      star.alpha = randomBetween(0.28, 0.9);
+  for (const cloud of state.clouds) {
+    cloud.y += cloud.speed * dt * (state.phase === "running" ? 1 : 0.36);
+    if (cloud.y > GAME_HEIGHT + cloud.h) {
+      cloud.y = -cloud.h - randomBetween(8, 120);
+      cloud.x = randomBetween(-60, GAME_WIDTH + 60);
+      cloud.w = randomBetween(74, 190);
+      cloud.h = randomBetween(22, 56);
+      cloud.speed = randomBetween(14, 58);
+      cloud.alpha = randomBetween(0.18, 0.72);
+      cloud.layer = Math.random() > 0.62 ? 2 : 1;
     }
   }
 
@@ -729,198 +735,473 @@ function drawRoundRect(
   ctx.closePath();
 }
 
+type AircraftPaint = {
+  body: string;
+  bodyLight: string;
+  bodyDark: string;
+  wing: string;
+  wingDark: string;
+  stripe: string;
+  canopy: string;
+  outline: string;
+  engine: string;
+};
+
+const playerPaint: AircraftPaint = {
+  body: "#e5e7eb",
+  bodyLight: "#f8fafc",
+  bodyDark: "#94a3b8",
+  wing: "#cbd5e1",
+  wingDark: "#64748b",
+  stripe: "#ef4444",
+  canopy: "#0ea5e9",
+  outline: "rgba(15, 23, 42, 0.68)",
+  engine: "#334155",
+};
+
+const enemyPaints: Record<EnemyKind, AircraftPaint> = {
+  scout: {
+    body: "#d97706",
+    bodyLight: "#fde68a",
+    bodyDark: "#92400e",
+    wing: "#b45309",
+    wingDark: "#78350f",
+    stripe: "#111827",
+    canopy: "#172554",
+    outline: "rgba(69, 26, 3, 0.7)",
+    engine: "#451a03",
+  },
+  fighter: {
+    body: "#b91c1c",
+    bodyLight: "#fca5a5",
+    bodyDark: "#7f1d1d",
+    wing: "#991b1b",
+    wingDark: "#450a0a",
+    stripe: "#f8fafc",
+    canopy: "#0f172a",
+    outline: "rgba(69, 10, 10, 0.78)",
+    engine: "#1f2937",
+  },
+  tank: {
+    body: "#4b5563",
+    bodyLight: "#d1d5db",
+    bodyDark: "#1f2937",
+    wing: "#6b7280",
+    wingDark: "#111827",
+    stripe: "#f97316",
+    canopy: "#111827",
+    outline: "rgba(17, 24, 39, 0.78)",
+    engine: "#030712",
+  },
+  boss: {
+    body: "#334155",
+    bodyLight: "#cbd5e1",
+    bodyDark: "#0f172a",
+    wing: "#475569",
+    wingDark: "#111827",
+    stripe: "#f43f5e",
+    canopy: "#082f49",
+    outline: "rgba(2, 6, 23, 0.8)",
+    engine: "#020617",
+  },
+};
+
+function drawCloud(ctx: CanvasRenderingContext2D, cloud: Cloud, time: number) {
+  ctx.save();
+  ctx.translate(cloud.x, cloud.y);
+  ctx.globalAlpha = cloud.alpha;
+  ctx.fillStyle = "rgba(255, 255, 255, 0.92)";
+  ctx.shadowColor = "rgba(255, 255, 255, 0.42)";
+  ctx.shadowBlur = cloud.layer === 2 ? 14 : 7;
+  ctx.beginPath();
+  ctx.ellipse(-cloud.w * 0.25, 0, cloud.w * 0.28, cloud.h * 0.44, 0, 0, Math.PI * 2);
+  ctx.ellipse(0, -cloud.h * 0.1, cloud.w * 0.36, cloud.h * 0.56, 0, 0, Math.PI * 2);
+  ctx.ellipse(cloud.w * 0.26, 0, cloud.w * 0.3, cloud.h * 0.42, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.shadowBlur = 0;
+  ctx.globalAlpha = cloud.alpha * 0.32;
+  ctx.fillStyle = "rgba(96, 165, 250, 0.42)";
+  ctx.beginPath();
+  ctx.ellipse(0, cloud.h * 0.28, cloud.w * 0.42, cloud.h * 0.18, Math.sin(time + cloud.x) * 0.08, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+}
+
+function drawAircraft(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  scale: number,
+  rotation: number,
+  paint: AircraftPaint,
+  heavy = false,
+) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate(rotation);
+  ctx.scale(scale, scale);
+
+  ctx.save();
+  ctx.globalAlpha = 0.2;
+  ctx.fillStyle = "#0f172a";
+  ctx.beginPath();
+  ctx.ellipse(0, 14, heavy ? 58 : 42, heavy ? 32 : 22, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+
+  ctx.strokeStyle = paint.outline;
+  ctx.lineWidth = heavy ? 2.7 : 2.2;
+  ctx.lineJoin = "round";
+
+  const wingSpan = heavy ? 82 : 66;
+  const wingRoot = heavy ? -7 : -4;
+  const wingBack = heavy ? 21 : 18;
+
+  ctx.fillStyle = paint.wingDark;
+  ctx.beginPath();
+  ctx.moveTo(-10, wingRoot);
+  ctx.lineTo(-wingSpan, heavy ? 10 : 12);
+  ctx.lineTo(-wingSpan + 8, heavy ? 29 : 26);
+  ctx.lineTo(-13, wingBack);
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+
+  ctx.beginPath();
+  ctx.moveTo(10, wingRoot);
+  ctx.lineTo(wingSpan, heavy ? 10 : 12);
+  ctx.lineTo(wingSpan - 8, heavy ? 29 : 26);
+  ctx.lineTo(13, wingBack);
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+
+  ctx.fillStyle = paint.wing;
+  ctx.beginPath();
+  ctx.moveTo(-8, -2);
+  ctx.lineTo(-wingSpan + 10, heavy ? 8 : 10);
+  ctx.lineTo(-wingSpan + 20, heavy ? 22 : 20);
+  ctx.lineTo(-10, 15);
+  ctx.closePath();
+  ctx.fill();
+
+  ctx.beginPath();
+  ctx.moveTo(8, -2);
+  ctx.lineTo(wingSpan - 10, heavy ? 8 : 10);
+  ctx.lineTo(wingSpan - 20, heavy ? 22 : 20);
+  ctx.lineTo(10, 15);
+  ctx.closePath();
+  ctx.fill();
+
+  ctx.fillStyle = paint.wingDark;
+  ctx.beginPath();
+  ctx.moveTo(-8, 31);
+  ctx.lineTo(-34, 48);
+  ctx.lineTo(-19, 53);
+  ctx.lineTo(-5, 40);
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+
+  ctx.beginPath();
+  ctx.moveTo(8, 31);
+  ctx.lineTo(34, 48);
+  ctx.lineTo(19, 53);
+  ctx.lineTo(5, 40);
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+
+  const bodyGradient = ctx.createLinearGradient(0, -48, 0, 54);
+  bodyGradient.addColorStop(0, paint.bodyLight);
+  bodyGradient.addColorStop(0.52, paint.body);
+  bodyGradient.addColorStop(1, paint.bodyDark);
+  ctx.fillStyle = bodyGradient;
+  ctx.beginPath();
+  ctx.moveTo(0, heavy ? -54 : -48);
+  ctx.bezierCurveTo(heavy ? 19 : 15, -36, heavy ? 17 : 13, 20, heavy ? 8 : 6, 48);
+  ctx.quadraticCurveTo(0, heavy ? 58 : 54, heavy ? -8 : -6, 48);
+  ctx.bezierCurveTo(heavy ? -17 : -13, 20, heavy ? -19 : -15, -36, 0, heavy ? -54 : -48);
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+
+  ctx.fillStyle = paint.stripe;
+  ctx.globalAlpha = 0.88;
+  drawRoundRect(ctx, -3, -22, 6, 45, 3);
+  ctx.fill();
+  ctx.globalAlpha = 1;
+
+  const canopyGradient = ctx.createLinearGradient(0, -31, 0, 2);
+  canopyGradient.addColorStop(0, "#e0f2fe");
+  canopyGradient.addColorStop(0.42, paint.canopy);
+  canopyGradient.addColorStop(1, "#082f49");
+  ctx.fillStyle = canopyGradient;
+  ctx.beginPath();
+  ctx.ellipse(0, heavy ? -20 : -18, heavy ? 8 : 7, heavy ? 20 : 17, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = "rgba(2, 6, 23, 0.36)";
+  ctx.stroke();
+
+  ctx.fillStyle = paint.engine;
+  drawRoundRect(ctx, -17, 31, 8, 18, 4);
+  ctx.fill();
+  drawRoundRect(ctx, 9, 31, 8, 18, 4);
+  ctx.fill();
+
+  ctx.fillStyle = "rgba(251, 146, 60, 0.82)";
+  ctx.beginPath();
+  ctx.moveTo(-15, 51);
+  ctx.lineTo(-10, 65);
+  ctx.lineTo(-7, 51);
+  ctx.closePath();
+  ctx.fill();
+  ctx.beginPath();
+  ctx.moveTo(15, 51);
+  ctx.lineTo(10, 65);
+  ctx.lineTo(7, 51);
+  ctx.closePath();
+  ctx.fill();
+
+  ctx.restore();
+}
+
+function drawBossAircraft(ctx: CanvasRenderingContext2D, enemy: Enemy, time: number) {
+  ctx.save();
+  ctx.translate(enemy.x, enemy.y);
+  ctx.rotate(Math.PI + Math.sin(time * 1.7 + enemy.phase) * 0.035);
+  ctx.scale(1.18, 1.18);
+  drawAircraft(ctx, 0, 0, 1.08, 0, enemyPaints.boss, true);
+
+  ctx.fillStyle = "rgba(15, 23, 42, 0.82)";
+  drawRoundRect(ctx, -76, -6, 24, 18, 8);
+  ctx.fill();
+  drawRoundRect(ctx, 52, -6, 24, 18, 8);
+  ctx.fill();
+
+  ctx.fillStyle = "#f43f5e";
+  ctx.beginPath();
+  ctx.arc(-64, 3 + Math.sin(time * 6) * 1.5, 4, 0, Math.PI * 2);
+  ctx.arc(64, 3 + Math.sin(time * 6 + 1.4) * 1.5, 4, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+
+  ctx.save();
+  ctx.fillStyle = "rgba(15, 23, 42, 0.76)";
+  drawRoundRect(ctx, enemy.x - 54, enemy.y - 62, 108, 8, 4);
+  ctx.fill();
+  ctx.fillStyle = "#16a34a";
+  drawRoundRect(ctx, enemy.x - 54, enemy.y - 62, 108 * (enemy.hp / enemy.maxHp), 8, 4);
+  ctx.fill();
+  ctx.restore();
+}
+
 function drawPlayer(ctx: CanvasRenderingContext2D, state: GameState) {
   const { x, y } = state.player;
   const blink = state.player.invulnerable > 0 && Math.floor(state.time * 18) % 2 === 0;
+
+  if (state.shield > 0 || state.player.invulnerable > 0) {
+    ctx.save();
+    ctx.globalAlpha = 0.32 + Math.sin(state.time * 7) * 0.08;
+    ctx.strokeStyle = state.shield > 0 ? "#0ea5e9" : "#f59e0b";
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.arc(x, y, 34 + Math.sin(state.time * 5) * 2, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
+  }
 
   if (blink) {
     ctx.globalAlpha = 0.48;
   }
 
-  if (state.shield > 0 || state.player.invulnerable > 0) {
-    ctx.save();
-    ctx.globalAlpha = 0.32 + Math.sin(state.time * 7) * 0.08;
-    ctx.strokeStyle = state.shield > 0 ? "#67e8f9" : "#fef3c7";
-    ctx.lineWidth = 3;
-    ctx.beginPath();
-    ctx.arc(x, y, 30 + Math.sin(state.time * 5) * 2, 0, Math.PI * 2);
-    ctx.stroke();
-    ctx.restore();
-  }
-
-  ctx.save();
-  ctx.translate(x, y);
-  ctx.fillStyle = "#d9f99d";
-  ctx.beginPath();
-  ctx.moveTo(0, -28);
-  ctx.lineTo(13, 18);
-  ctx.lineTo(0, 10);
-  ctx.lineTo(-13, 18);
-  ctx.closePath();
-  ctx.fill();
-
-  ctx.fillStyle = "#22d3ee";
-  ctx.beginPath();
-  ctx.moveTo(-12, -2);
-  ctx.lineTo(-36, 18);
-  ctx.lineTo(-10, 13);
-  ctx.closePath();
-  ctx.fill();
-
-  ctx.beginPath();
-  ctx.moveTo(12, -2);
-  ctx.lineTo(36, 18);
-  ctx.lineTo(10, 13);
-  ctx.closePath();
-  ctx.fill();
-
-  ctx.fillStyle = "#f97316";
-  ctx.beginPath();
-  ctx.moveTo(-9, 20);
-  ctx.lineTo(-2, 31);
-  ctx.lineTo(1, 18);
-  ctx.closePath();
-  ctx.fill();
-  ctx.beginPath();
-  ctx.moveTo(9, 20);
-  ctx.lineTo(2, 31);
-  ctx.lineTo(-1, 18);
-  ctx.closePath();
-  ctx.fill();
-
-  ctx.fillStyle = "#0f172a";
-  ctx.beginPath();
-  ctx.ellipse(0, -10, 5, 10, 0, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.restore();
+  drawAircraft(ctx, x, y, 0.72, 0, playerPaint);
   ctx.globalAlpha = 1;
 }
 
 function drawEnemy(ctx: CanvasRenderingContext2D, enemy: Enemy, time: number) {
   if (enemy.kind === "boss") {
-    ctx.save();
-    ctx.translate(enemy.x, enemy.y);
-    ctx.fillStyle = "#991b1b";
-    drawRoundRect(ctx, -54, -25, 108, 50, 8);
-    ctx.fill();
-    ctx.fillStyle = "#ef4444";
-    ctx.beginPath();
-    ctx.moveTo(0, 34);
-    ctx.lineTo(-66, 4);
-    ctx.lineTo(-48, -20);
-    ctx.lineTo(48, -20);
-    ctx.lineTo(66, 4);
-    ctx.closePath();
-    ctx.fill();
-    ctx.fillStyle = "#fde047";
-    ctx.beginPath();
-    ctx.arc(-30, 6, 6, 0, Math.PI * 2);
-    ctx.arc(30, 6, 6, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.fillStyle = "#020617";
-    drawRoundRect(ctx, -42, -42, 84, 7, 4);
-    ctx.fill();
-    ctx.fillStyle = "#22c55e";
-    drawRoundRect(ctx, -42, -42, 84 * (enemy.hp / enemy.maxHp), 7, 4);
-    ctx.fill();
-    ctx.restore();
+    drawBossAircraft(ctx, enemy, time);
     return;
   }
 
-  ctx.save();
-  ctx.translate(enemy.x, enemy.y);
-  const wobble = Math.sin(time * 7 + enemy.phase) * 1.5;
-  ctx.rotate(wobble * 0.01);
-  ctx.fillStyle = enemy.kind === "tank" ? "#fb923c" : enemy.kind === "fighter" ? "#f43f5e" : "#a78bfa";
-  ctx.beginPath();
-  ctx.moveTo(0, enemy.h / 2);
-  ctx.lineTo(enemy.w / 2, -enemy.h / 4);
-  ctx.lineTo(9, -enemy.h / 2);
-  ctx.lineTo(0, -enemy.h / 3);
-  ctx.lineTo(-9, -enemy.h / 2);
-  ctx.lineTo(-enemy.w / 2, -enemy.h / 4);
-  ctx.closePath();
-  ctx.fill();
-
-  ctx.fillStyle = "#111827";
-  ctx.beginPath();
-  ctx.ellipse(0, 1, enemy.w * 0.16, enemy.h * 0.22, 0, 0, Math.PI * 2);
-  ctx.fill();
+  const wobble = Math.sin(time * 5 + enemy.phase) * 0.04;
+  const scale = enemy.kind === "tank" ? 0.72 : enemy.kind === "fighter" ? 0.6 : 0.5;
+  drawAircraft(ctx, enemy.x, enemy.y, scale, Math.PI + wobble, enemyPaints[enemy.kind], enemy.kind === "tank");
 
   if (enemy.maxHp > 1) {
-    ctx.fillStyle = "#0f172a";
-    drawRoundRect(ctx, -enemy.w / 2, -enemy.h / 2 - 8, enemy.w, 4, 3);
+    ctx.save();
+    ctx.fillStyle = "rgba(15, 23, 42, 0.72)";
+    drawRoundRect(ctx, enemy.x - enemy.w / 2, enemy.y - enemy.h / 2 - 13, enemy.w, 5, 3);
     ctx.fill();
-    ctx.fillStyle = "#86efac";
-    drawRoundRect(ctx, -enemy.w / 2, -enemy.h / 2 - 8, enemy.w * (enemy.hp / enemy.maxHp), 4, 3);
+    ctx.fillStyle = "#22c55e";
+    drawRoundRect(ctx, enemy.x - enemy.w / 2, enemy.y - enemy.h / 2 - 13, enemy.w * (enemy.hp / enemy.maxHp), 5, 3);
     ctx.fill();
+    ctx.restore();
   }
-  ctx.restore();
+}
+
+function drawParachute(ctx: CanvasRenderingContext2D, color: string) {
+  ctx.strokeStyle = "rgba(15, 23, 42, 0.28)";
+  ctx.lineWidth = 1.4;
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  ctx.moveTo(-22, -16);
+  ctx.quadraticCurveTo(0, -38, 22, -16);
+  ctx.lineTo(-22, -16);
+  ctx.fill();
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(-16, -15);
+  ctx.lineTo(-11, -3);
+  ctx.moveTo(16, -15);
+  ctx.lineTo(11, -3);
+  ctx.moveTo(0, -28);
+  ctx.lineTo(0, -4);
+  ctx.stroke();
 }
 
 function drawPowerUp(ctx: CanvasRenderingContext2D, powerUp: PowerUp, time: number) {
-  const pulse = 1 + Math.sin(time * 8) * 0.08;
+  const pulse = 1 + Math.sin(time * 8) * 0.05;
   const colorMap: Record<PowerKind, string> = {
-    heal: "#22c55e",
-    shield: "#06b6d4",
-    rapid: "#eab308",
-    spread: "#8b5cf6",
-    bomb: "#f97316",
-  };
-  const textMap: Record<PowerKind, string> = {
-    heal: "+",
-    shield: "盾",
-    rapid: "速",
-    spread: "散",
-    bomb: "爆",
+    heal: "#f8fafc",
+    shield: "#38bdf8",
+    rapid: "#fbbf24",
+    spread: "#60a5fa",
+    bomb: "#84cc16",
   };
 
   ctx.save();
   ctx.translate(powerUp.x, powerUp.y);
   ctx.scale(pulse, pulse);
-  ctx.fillStyle = colorMap[powerUp.kind];
-  ctx.shadowColor = colorMap[powerUp.kind];
-  ctx.shadowBlur = 16;
-  drawRoundRect(ctx, -14, -14, 28, 28, 7);
-  ctx.fill();
+  drawParachute(ctx, colorMap[powerUp.kind]);
+  ctx.shadowColor = "rgba(15, 23, 42, 0.24)";
+  ctx.shadowBlur = 8;
+
+  if (powerUp.kind === "heal") {
+    ctx.fillStyle = "#f8fafc";
+    drawRoundRect(ctx, -18, -2, 36, 28, 6);
+    ctx.fill();
+    ctx.strokeStyle = "#334155";
+    ctx.stroke();
+    ctx.fillStyle = "#dc2626";
+    drawRoundRect(ctx, -4, 3, 8, 18, 2);
+    ctx.fill();
+    drawRoundRect(ctx, -10, 8, 20, 8, 2);
+    ctx.fill();
+  }
+
+  if (powerUp.kind === "shield") {
+    ctx.fillStyle = "#0ea5e9";
+    ctx.beginPath();
+    ctx.moveTo(0, -3);
+    ctx.quadraticCurveTo(17, 2, 16, 11);
+    ctx.quadraticCurveTo(13, 23, 0, 29);
+    ctx.quadraticCurveTo(-13, 23, -16, 11);
+    ctx.quadraticCurveTo(-17, 2, 0, -3);
+    ctx.fill();
+    ctx.strokeStyle = "#e0f2fe";
+    ctx.lineWidth = 2;
+    ctx.stroke();
+  }
+
+  if (powerUp.kind === "rapid") {
+    ctx.fillStyle = "#b45309";
+    drawRoundRect(ctx, -18, -1, 36, 27, 5);
+    ctx.fill();
+    ctx.fillStyle = "#fde68a";
+    for (let i = -11; i <= 11; i += 11) {
+      drawRoundRect(ctx, i - 3, 3, 6, 18, 3);
+      ctx.fill();
+    }
+  }
+
+  if (powerUp.kind === "spread") {
+    ctx.fillStyle = "#dbeafe";
+    drawRoundRect(ctx, -20, 3, 40, 18, 8);
+    ctx.fill();
+    ctx.fillStyle = "#2563eb";
+    drawRoundRect(ctx, -17, 8, 34, 4, 2);
+    ctx.fill();
+    ctx.strokeStyle = "#1e3a8a";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(-17, 21);
+    ctx.lineTo(-27, 31);
+    ctx.moveTo(17, 21);
+    ctx.lineTo(27, 31);
+    ctx.stroke();
+  }
+
+  if (powerUp.kind === "bomb") {
+    ctx.fillStyle = "#365314";
+    ctx.beginPath();
+    ctx.ellipse(0, 13, 12, 20, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = "#84cc16";
+    ctx.beginPath();
+    ctx.moveTo(0, -8);
+    ctx.lineTo(8, 3);
+    ctx.lineTo(-8, 3);
+    ctx.closePath();
+    ctx.fill();
+    ctx.fillStyle = "#1a2e05";
+    ctx.beginPath();
+    ctx.moveTo(-9, 28);
+    ctx.lineTo(-18, 36);
+    ctx.lineTo(-5, 31);
+    ctx.closePath();
+    ctx.fill();
+    ctx.beginPath();
+    ctx.moveTo(9, 28);
+    ctx.lineTo(18, 36);
+    ctx.lineTo(5, 31);
+    ctx.closePath();
+    ctx.fill();
+  }
+
   ctx.shadowBlur = 0;
-  ctx.fillStyle = "#020617";
-  ctx.font = "700 16px Arial, sans-serif";
-  ctx.textAlign = "center";
-  ctx.textBaseline = "middle";
-  ctx.fillText(textMap[powerUp.kind], 0, 1);
+  ctx.restore();
+}
+
+function drawSky(ctx: CanvasRenderingContext2D, state: GameState) {
+  const sky = ctx.createLinearGradient(0, 0, 0, GAME_HEIGHT);
+  sky.addColorStop(0, "#3ba3ec");
+  sky.addColorStop(0.46, "#8bd3ff");
+  sky.addColorStop(0.78, "#c8ecff");
+  sky.addColorStop(1, "#e8f7ff");
+  ctx.fillStyle = sky;
+  ctx.fillRect(0, 0, GAME_WIDTH, GAME_HEIGHT);
+
+  ctx.save();
+  ctx.globalAlpha = 0.4;
+  const sun = ctx.createRadialGradient(78, 74, 6, 78, 74, 96);
+  sun.addColorStop(0, "rgba(255, 250, 205, 0.9)");
+  sun.addColorStop(0.32, "rgba(255, 244, 163, 0.34)");
+  sun.addColorStop(1, "rgba(255, 244, 163, 0)");
+  ctx.fillStyle = sun;
+  ctx.fillRect(0, 0, GAME_WIDTH, GAME_HEIGHT);
+  ctx.restore();
+
+  ctx.save();
+  ctx.strokeStyle = "rgba(255, 255, 255, 0.3)";
+  ctx.lineWidth = 1;
+  for (let y = (state.time * 28) % 92; y < GAME_HEIGHT; y += 92) {
+    ctx.beginPath();
+    ctx.moveTo(36, y);
+    ctx.bezierCurveTo(130, y + 18, 234, y - 18, 410, y + 12);
+    ctx.stroke();
+  }
   ctx.restore();
 }
 
 function drawGame(ctx: CanvasRenderingContext2D, state: GameState) {
   ctx.save();
-  ctx.fillStyle = "#07111f";
-  ctx.fillRect(0, 0, GAME_WIDTH, GAME_HEIGHT);
+  drawSky(ctx, state);
 
-  const sky = ctx.createLinearGradient(0, 0, 0, GAME_HEIGHT);
-  sky.addColorStop(0, "#07111f");
-  sky.addColorStop(0.46, "#10243a");
-  sky.addColorStop(1, "#111827");
-  ctx.fillStyle = sky;
-  ctx.fillRect(0, 0, GAME_WIDTH, GAME_HEIGHT);
-
-  ctx.strokeStyle = "rgba(56, 189, 248, 0.08)";
-  ctx.lineWidth = 1;
-  for (let y = (state.time * 44) % 58; y < GAME_HEIGHT; y += 58) {
-    ctx.beginPath();
-    ctx.moveTo(0, y);
-    ctx.lineTo(GAME_WIDTH, y);
-    ctx.stroke();
+  for (const cloud of state.clouds.filter((item) => item.layer === 1)) {
+    drawCloud(ctx, cloud, state.time);
   }
-
-  for (const star of state.stars) {
-    ctx.globalAlpha = star.alpha;
-    ctx.fillStyle = star.r > 1.6 ? "#f8fafc" : "#93c5fd";
-    ctx.beginPath();
-    ctx.arc(star.x, star.y, star.r, 0, Math.PI * 2);
-    ctx.fill();
-  }
-  ctx.globalAlpha = 1;
 
   const shakeX = state.shake ? randomBetween(-state.shake, state.shake) * 0.18 : 0;
   const shakeY = state.shake ? randomBetween(-state.shake, state.shake) * 0.18 : 0;
@@ -931,11 +1212,17 @@ function drawGame(ctx: CanvasRenderingContext2D, state: GameState) {
   }
 
   for (const bullet of state.bullets) {
-    ctx.fillStyle = "#fef08a";
-    ctx.shadowColor = "#facc15";
-    ctx.shadowBlur = 12;
-    drawRoundRect(ctx, bullet.x - 3, bullet.y - 13, 6, 21, 3);
+    ctx.fillStyle = "#fff7ad";
+    ctx.shadowColor = "#f97316";
+    ctx.shadowBlur = 10;
+    drawRoundRect(ctx, bullet.x - 2.5, bullet.y - 15, 5, 24, 3);
     ctx.fill();
+    ctx.strokeStyle = "rgba(249, 115, 22, 0.58)";
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(bullet.x, bullet.y + 10);
+    ctx.lineTo(bullet.x - bullet.vx * 0.018, bullet.y + 31);
+    ctx.stroke();
     ctx.shadowBlur = 0;
   }
 
@@ -944,16 +1231,24 @@ function drawGame(ctx: CanvasRenderingContext2D, state: GameState) {
   }
 
   for (const bullet of state.enemyBullets) {
-    ctx.fillStyle = "#fb7185";
-    ctx.shadowColor = "#fb7185";
+    ctx.fillStyle = "#ef4444";
+    ctx.shadowColor = "#b91c1c";
     ctx.shadowBlur = 10;
     ctx.beginPath();
     ctx.arc(bullet.x, bullet.y, bullet.radius, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = "#fef2f2";
+    ctx.beginPath();
+    ctx.arc(bullet.x - bullet.vx * 0.01, bullet.y - bullet.vy * 0.01, bullet.radius * 0.36, 0, Math.PI * 2);
     ctx.fill();
     ctx.shadowBlur = 0;
   }
 
   drawPlayer(ctx, state);
+
+  for (const cloud of state.clouds.filter((item) => item.layer === 2)) {
+    drawCloud(ctx, cloud, state.time);
+  }
 
   for (const explosion of state.explosions) {
     const alpha = clamp(explosion.life / explosion.maxLife, 0, 1);
@@ -1035,10 +1330,10 @@ export default function Home() {
     let x = 0;
     let y = 0;
 
-    if (keys.has("arrowleft") || keys.has("a")) x -= 1;
-    if (keys.has("arrowright") || keys.has("d")) x += 1;
-    if (keys.has("arrowup") || keys.has("w")) y -= 1;
-    if (keys.has("arrowdown") || keys.has("s")) y += 1;
+    if (keys.has("a")) x -= 1;
+    if (keys.has("d")) x += 1;
+    if (keys.has("w")) y -= 1;
+    if (keys.has("s")) y += 1;
 
     const keyboard = normalize(x, y);
     const joystickValue = joystickInputRef.current;
@@ -1139,16 +1434,7 @@ export default function Home() {
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       const key = event.key.toLowerCase();
-      const controls = [
-        "arrowleft",
-        "arrowright",
-        "arrowup",
-        "arrowdown",
-        "a",
-        "d",
-        "w",
-        "s",
-      ];
+      const controls = ["a", "d", "w", "s"];
 
       if (controls.includes(key)) {
         event.preventDefault();
