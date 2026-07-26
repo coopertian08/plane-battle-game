@@ -18,8 +18,8 @@ const TERRAIN_TILE_URL = publicAssetUrl("terrain-tile.png");
 const AIRPORT_RUNWAY_URL = publicAssetUrl("airport-runway.png");
 const TERRAIN_TILE_SIZE = 1600;
 const TAKEOFF_RUNWAY_WORLD_WIDTH = 4600;
-const SPRITE_COLUMNS = 5;
-const SPRITE_ROWS = 3;
+const SPRITE_COLUMNS = 7;
+const SPRITE_ROWS = 2;
 const CHINA_PLANE_IDS = ["j8", "j10", "j11", "j15", "j16", "j20", "j35"] as const;
 const USA_PLANE_IDS = ["f16", "f18", "f14", "f15", "f117", "f22", "f35"] as const;
 const PLANE_IDS = [...CHINA_PLANE_IDS, ...USA_PLANE_IDS] as const;
@@ -36,6 +36,7 @@ const CAMPAIGN_STAGE_KEY = "plane-battle-campaign-stage";
 
 type GamePhase = "menu" | "hangar" | "takeoff" | "running" | "paused" | "playerDying" | "over" | "stageClear";
 type GameMode = "endless" | "stage";
+type HomeTab = "battle" | "upgrade" | "shop" | "inventory";
 type PlaneId = (typeof PLANE_IDS)[number];
 type PlaneFaction = "china" | "usa";
 type UpgradeKey = "firepower" | "missiles" | "armor" | "fuelTank" | "engine" | "speed" | "tanker";
@@ -49,10 +50,11 @@ type UpgradeState = Record<UpgradeKey, number>;
 type PlaneUpgradeState = Record<PlaneId, UpgradeState>;
 type PlaneUnlockState = Record<PlaneId, boolean>;
 type UpgradeBlueprintState = Record<UpgradeKey, number>;
+type PlaneBlueprintState = Record<PlaneId, number>;
 
 type InventoryState = {
   materials: number;
-  planeBlueprints: number;
+  planeBlueprints: PlaneBlueprintState;
   upgradeBlueprints: UpgradeBlueprintState;
 };
 
@@ -64,7 +66,7 @@ type DailyCheckinState = {
 type InventoryReward = {
   credits?: number;
   materials?: number;
-  planeBlueprints?: number;
+  planeBlueprints?: Partial<PlaneBlueprintState>;
   upgradeBlueprints?: Partial<UpgradeBlueprintState>;
   giftPlane?: PlaneId;
 };
@@ -312,9 +314,11 @@ const defaultUpgradeBlueprints: UpgradeBlueprintState = {
   tanker: 0,
 };
 
+const defaultPlaneBlueprints = Object.fromEntries(PLANE_IDS.map((planeId) => [planeId, 0])) as PlaneBlueprintState;
+
 const defaultInventory: InventoryState = {
   materials: 0,
-  planeBlueprints: 0,
+  planeBlueprints: { ...defaultPlaneBlueprints },
   upgradeBlueprints: { ...defaultUpgradeBlueprints },
 };
 
@@ -688,7 +692,7 @@ const dailyRewards: InventoryReward[] = [
   { credits: 120 },
   { credits: 160, materials: 6 },
   { credits: 210, materials: 8 },
-  { credits: 260, planeBlueprints: 1 },
+  { credits: 260 },
   { credits: 320, materials: 14 },
   { credits: 420, upgradeBlueprints: { engine: 1, firepower: 1, missiles: 1 } },
   { credits: 520 },
@@ -703,15 +707,18 @@ const shopPacks: { id: ShopPackId; label: string; description: string; cost: num
 const spriteSlots: Partial<Record<SpriteKey, { col: number; row: number }>> = {
   j8: { col: 0, row: 0 },
   j10: { col: 1, row: 0 },
-  j15: { col: 2, row: 0 },
-  j20: { col: 3, row: 0 },
-  j35: { col: 4, row: 0 },
+  j11: { col: 2, row: 0 },
+  j15: { col: 3, row: 0 },
+  j16: { col: 4, row: 0 },
+  j20: { col: 5, row: 0 },
+  j35: { col: 6, row: 0 },
   f16: { col: 0, row: 1 },
   f18: { col: 1, row: 1 },
-  f15: { col: 2, row: 1 },
-  f22: { col: 3, row: 1 },
-  f35: { col: 4, row: 1 },
-  tanker: { col: 0, row: 2 },
+  f14: { col: 2, row: 1 },
+  f15: { col: 3, row: 1 },
+  f117: { col: 4, row: 1 },
+  f22: { col: 5, row: 1 },
+  f35: { col: 6, row: 1 },
 };
 
 const weaponSpriteSlots: Record<WeaponSpriteKey, WeaponSpriteSlot> = {
@@ -724,7 +731,7 @@ const weaponSpriteSlots: Record<WeaponSpriteKey, WeaponSpriteSlot> = {
 };
 
 function getPlanePreviewClass(planeId: PlaneId) {
-  return ["plane-preview", `plane-${planeId}`, spriteSlots[planeId] ? "" : "plane-generated"].filter(Boolean).join(" ");
+  return `plane-preview plane-${planeId}`;
 }
 
 function clamp(value: number, min: number, max: number) {
@@ -841,19 +848,29 @@ function sanitizeInventory(value?: Partial<InventoryState> & Record<string, unkn
   for (const meta of upgradeCatalog) {
     upgradeBlueprints[meta.key] = Math.max(0, Math.floor(Number(parsedBlueprints[meta.key]) || 0));
   }
+  const planeBlueprints = { ...defaultPlaneBlueprints };
+  if (typeof value?.planeBlueprints === "number") {
+    const legacyAmount = Math.max(0, Math.floor(value.planeBlueprints));
+    for (const planeId of PLANE_IDS) planeBlueprints[planeId] = legacyAmount;
+  } else {
+    const parsedPlaneBlueprints = (value?.planeBlueprints ?? {}) as Partial<PlaneBlueprintState> & Record<string, unknown>;
+    for (const planeId of PLANE_IDS) {
+      planeBlueprints[planeId] = Math.max(0, Math.floor(Number(parsedPlaneBlueprints[planeId]) || 0));
+    }
+  }
   return {
     materials: Math.max(0, Math.floor(Number(value?.materials) || 0)),
-    planeBlueprints: Math.max(0, Math.floor(Number(value?.planeBlueprints) || 0)),
+    planeBlueprints,
     upgradeBlueprints,
   };
 }
 
 function readInventory(): InventoryState {
-  if (typeof window === "undefined") return { ...defaultInventory, upgradeBlueprints: { ...defaultUpgradeBlueprints } };
+  if (typeof window === "undefined") return { ...defaultInventory, planeBlueprints: { ...defaultPlaneBlueprints }, upgradeBlueprints: { ...defaultUpgradeBlueprints } };
   try {
     return sanitizeInventory(JSON.parse(window.localStorage.getItem(INVENTORY_KEY) ?? "{}") as Record<string, unknown>);
   } catch {
-    return { ...defaultInventory, upgradeBlueprints: { ...defaultUpgradeBlueprints } };
+    return { ...defaultInventory, planeBlueprints: { ...defaultPlaneBlueprints }, upgradeBlueprints: { ...defaultUpgradeBlueprints } };
   }
 }
 
@@ -998,9 +1015,12 @@ function canClaimDaily(daily: DailyCheckinState) {
 function addRewardToInventory(inventory: InventoryState, reward: InventoryReward) {
   const next: InventoryState = {
     materials: inventory.materials + Math.max(0, Math.floor(reward.materials ?? 0)),
-    planeBlueprints: inventory.planeBlueprints + Math.max(0, Math.floor(reward.planeBlueprints ?? 0)),
+    planeBlueprints: { ...inventory.planeBlueprints },
     upgradeBlueprints: { ...inventory.upgradeBlueprints },
   };
+  for (const planeId of PLANE_IDS) {
+    next.planeBlueprints[planeId] += Math.max(0, Math.floor(reward.planeBlueprints?.[planeId] ?? 0));
+  }
   for (const meta of upgradeCatalog) {
     next.upgradeBlueprints[meta.key] += Math.max(0, Math.floor(reward.upgradeBlueprints?.[meta.key] ?? 0));
   }
@@ -1022,7 +1042,7 @@ function getPlaneUnlockRequirement(planeId: PlaneId) {
   return {
     credits: plane.unlockCost,
     materials: tier >= 2 ? 10 + Math.max(0, tier - 2) * 14 : 0,
-    planeBlueprints: tier === 0 ? 0 : tier + 1,
+    planeBlueprints: tier === 0 ? 0 : 1,
   };
 }
 
@@ -1045,7 +1065,7 @@ function formatPlaneRequirement(planeId: PlaneId) {
   return formatRequirement([
     requirement.credits > 0 ? `${requirement.credits} 战功` : "",
     requirement.materials > 0 ? `${requirement.materials} 材料` : "",
-    requirement.planeBlueprints > 0 ? `${requirement.planeBlueprints} 飞机蓝图` : "",
+    requirement.planeBlueprints > 0 ? `${requirement.planeBlueprints} ${getPlaneMeta(planeId).label}蓝图` : "",
   ]) || "已拥有";
 }
 
@@ -1060,7 +1080,7 @@ function canAffordUpgrade(meta: UpgradeMeta, level: number, credits: number, inv
 
 function canAffordPlane(planeId: PlaneId, credits: number, inventory: InventoryState) {
   const requirement = getPlaneUnlockRequirement(planeId);
-  return credits >= requirement.credits && inventory.materials >= requirement.materials && inventory.planeBlueprints >= requirement.planeBlueprints;
+  return credits >= requirement.credits && inventory.materials >= requirement.materials && inventory.planeBlueprints[planeId] >= requirement.planeBlueprints;
 }
 
 function getGiftPlane(unlocked: PlaneUnlockState, selectedPlane: PlaneId) {
@@ -1072,8 +1092,25 @@ function getGiftPlane(unlocked: PlaneUnlockState, selectedPlane: PlaneId) {
   );
 }
 
+function rollPlaneBlueprint(rareBias: number) {
+  let total = 0;
+  const weights = PLANE_IDS.map((planeId) => {
+    const tier = getPlaneTier(planeId);
+    const baseWeight = Math.max(0.42, 8.5 - tier * 1.28);
+    const weight = baseWeight + rareBias * (tier + 1) * 1.35;
+    total += weight;
+    return { planeId, weight };
+  });
+  let roll = Math.random() * total;
+  for (const item of weights) {
+    roll -= item.weight;
+    if (roll <= 0) return item.planeId;
+  }
+  return weights[0].planeId;
+}
+
 function rollShopPack(pack: { rolls: number; rareBias: number }): InventoryReward {
-  const reward: InventoryReward = { credits: 0, materials: 0, planeBlueprints: 0, upgradeBlueprints: {} };
+  const reward: InventoryReward = { credits: 0, materials: 0, planeBlueprints: {}, upgradeBlueprints: {} };
   for (let index = 0; index < pack.rolls; index += 1) {
     const roll = Math.random() + pack.rareBias;
     if (roll < 0.26) {
@@ -1084,7 +1121,8 @@ function rollShopPack(pack: { rolls: number; rareBias: number }): InventoryRewar
       const key = upgradeCatalog[Math.floor(Math.random() * upgradeCatalog.length)].key;
       reward.upgradeBlueprints = { ...reward.upgradeBlueprints, [key]: (reward.upgradeBlueprints?.[key] ?? 0) + 1 };
     } else {
-      reward.planeBlueprints = (reward.planeBlueprints ?? 0) + 1;
+      const planeId = rollPlaneBlueprint(pack.rareBias);
+      reward.planeBlueprints = { ...reward.planeBlueprints, [planeId]: (reward.planeBlueprints?.[planeId] ?? 0) + 1 };
     }
   }
   return reward;
@@ -1094,9 +1132,12 @@ function formatReward(reward: InventoryReward) {
   const parts = [
     reward.credits ? `${reward.credits} 战功` : "",
     reward.materials ? `${reward.materials} 材料` : "",
-    reward.planeBlueprints ? `${reward.planeBlueprints} 飞机蓝图` : "",
     reward.giftPlane ? `解锁 ${getPlaneMeta(reward.giftPlane).label}` : "",
   ];
+  for (const planeId of PLANE_IDS) {
+    const amount = reward.planeBlueprints?.[planeId] ?? 0;
+    if (amount > 0) parts.push(`${amount} ${getPlaneMeta(planeId).label}蓝图`);
+  }
   for (const meta of upgradeCatalog) {
     const amount = reward.upgradeBlueprints?.[meta.key] ?? 0;
     if (amount > 0) parts.push(`${amount} ${upgradeBlueprintLabels[meta.key]}`);
@@ -3107,9 +3148,10 @@ export default function Home() {
   const [selectedPlane, setSelectedPlane] = useState<PlaneId>("j8");
   const [planeUpgrades, setPlaneUpgrades] = useState<PlaneUpgradeState>(createDefaultPlaneUpgrades);
   const [unlockedPlanes, setUnlockedPlanes] = useState<PlaneUnlockState>(defaultUnlockedPlanes);
-  const [inventory, setInventory] = useState<InventoryState>({ ...defaultInventory, upgradeBlueprints: { ...defaultUpgradeBlueprints } });
+  const [inventory, setInventory] = useState<InventoryState>({ ...defaultInventory, planeBlueprints: { ...defaultPlaneBlueprints }, upgradeBlueprints: { ...defaultUpgradeBlueprints } });
   const [dailyCheckin, setDailyCheckin] = useState<DailyCheckinState>(defaultDailyCheckin);
   const [rewardNotice, setRewardNotice] = useState("");
+  const [homeTab, setHomeTab] = useState<HomeTab>("battle");
   const [joystick, setJoystick] = useState({ x: 0, y: 0, active: false });
   const upgrades = planeUpgrades[selectedPlane] ?? defaultUpgrades;
 
@@ -3228,6 +3270,7 @@ export default function Home() {
     const state = createGameState(Math.max(readBestScore(), gameRef.current?.bestScore ?? 0), upgrades, selectedPlane);
     state.phase = "menu";
     gameRef.current = state;
+    setHomeTab("battle");
     setPhase("menu");
     setHud(snapshot(state));
   }, [selectedPlane, upgrades]);
@@ -3236,7 +3279,17 @@ export default function Home() {
     const state = gameRef.current;
     if (!state || state.phase === "running" || state.phase === "playerDying") return;
     state.phase = "hangar";
+    setHomeTab("upgrade");
     setPhase("hangar");
+    setHud(snapshot(state));
+  }, []);
+
+  const openHomeTab = useCallback((tab: HomeTab) => {
+    const state = gameRef.current;
+    if (!state || state.phase === "running" || state.phase === "playerDying") return;
+    state.phase = tab === "battle" ? "menu" : "hangar";
+    setHomeTab(tab);
+    setPhase(state.phase);
     setHud(snapshot(state));
   }, []);
 
@@ -3268,7 +3321,7 @@ export default function Home() {
       const nextCredits = credits - requirement.credits;
       const nextInventory: InventoryState = {
         materials: inventory.materials - requirement.materials,
-        planeBlueprints: inventory.planeBlueprints - requirement.planeBlueprints,
+        planeBlueprints: { ...inventory.planeBlueprints, [planeId]: inventory.planeBlueprints[planeId] - requirement.planeBlueprints },
         upgradeBlueprints: { ...inventory.upgradeBlueprints },
       };
       const nextUnlocked = { ...unlockedPlanes, [planeId]: true };
@@ -3302,7 +3355,7 @@ export default function Home() {
       const nextCredits = credits - requirement.credits;
       const nextInventory: InventoryState = {
         materials: inventory.materials - requirement.materials,
-        planeBlueprints: inventory.planeBlueprints,
+        planeBlueprints: { ...inventory.planeBlueprints },
         upgradeBlueprints: { ...inventory.upgradeBlueprints },
       };
       if (requirement.blueprintKey) {
@@ -3326,6 +3379,10 @@ export default function Home() {
     const day = getNextDailyDay(dailyCheckin);
     const baseReward = dailyRewards[day - 1] ?? dailyRewards[0];
     const reward: InventoryReward = { ...baseReward, upgradeBlueprints: { ...baseReward.upgradeBlueprints } };
+    if (day === 4) {
+      const planeId = rollPlaneBlueprint(0.08);
+      reward.planeBlueprints = { ...reward.planeBlueprints, [planeId]: (reward.planeBlueprints?.[planeId] ?? 0) + 1 };
+    }
     let nextUnlocked = unlockedPlanes;
     if (day === 7) {
       const giftPlane = getGiftPlane(unlockedPlanes, selectedPlane);
@@ -3333,7 +3390,10 @@ export default function Home() {
         reward.giftPlane = giftPlane;
         nextUnlocked = { ...unlockedPlanes, [giftPlane]: true };
       } else {
-        reward.planeBlueprints = (reward.planeBlueprints ?? 0) + 3;
+        for (let index = 0; index < 3; index += 1) {
+          const planeId = rollPlaneBlueprint(0.2);
+          reward.planeBlueprints = { ...reward.planeBlueprints, [planeId]: (reward.planeBlueprints?.[planeId] ?? 0) + 1 };
+        }
       }
     }
     const nextCredits = credits + Math.max(0, Math.floor(reward.credits ?? 0));
@@ -3548,10 +3608,22 @@ export default function Home() {
   const showOver = phase === "over";
   const showStageClear = phase === "stageClear";
   const showPause = phase === "paused";
+  const totalPlaneBlueprints = PLANE_IDS.reduce((total, planeId) => total + inventory.planeBlueprints[planeId], 0);
   const nextDailyDay = getNextDailyDay(dailyCheckin);
   const dailyClaimable = canClaimDaily(dailyCheckin);
   const nextDailyReward = dailyRewards[nextDailyDay - 1] ?? dailyRewards[0];
-  const dailyRewardText = nextDailyDay === 7 ? `${formatReward(nextDailyReward)}、随机解锁一架未拥有战机` : formatReward(nextDailyReward);
+  const dailyRewardText =
+    nextDailyDay === 7
+      ? `${formatReward(nextDailyReward)}、随机解锁一架未拥有战机`
+      : nextDailyDay === 4
+        ? `${formatReward(nextDailyReward)}、随机飞机蓝图`
+        : formatReward(nextDailyReward);
+  const homeTabs: { id: HomeTab; label: string }[] = [
+    { id: "battle", label: "战斗" },
+    { id: "upgrade", label: "升级" },
+    { id: "shop", label: "商店" },
+    { id: "inventory", label: "仓库" },
+  ];
   const hangarGroups: { faction: PlaneFaction; title: string; planes: PlaneMeta[] }[] = [
     { faction: "china", title: "中国战斗机", planes: planeCatalog.filter((item) => item.faction === "china") },
     { faction: "usa", title: "美国战斗机", planes: planeCatalog.filter((item) => item.faction === "usa") },
@@ -3691,18 +3763,13 @@ export default function Home() {
                       <small>开放空域 · 持续追击</small>
                     </button>
                   </div>
-                  <div className="panel-actions">
-                    <button className="secondary-action" type="button" onClick={openHangar}>
-                      进入机库
-                    </button>
-                  </div>
                 </>
               )}
 
               {showHangar && (
                 <>
-                  <p>战机机库</p>
-                  <h1>机库</h1>
+                  <p>{homeTab === "shop" ? "补给商店" : homeTab === "inventory" ? "蓝图仓库" : "战机升级"}</p>
+                  <h1>{homeTab === "shop" ? "商店" : homeTab === "inventory" ? "仓库" : "升级"}</h1>
                   <div className="hangar-summary">
                     <div>
                       <span>战功</span>
@@ -3714,7 +3781,7 @@ export default function Home() {
                     </div>
                     <div>
                       <span>飞机蓝图</span>
-                      <strong>{inventory.planeBlueprints}</strong>
+                      <strong>{totalPlaneBlueprints}</strong>
                     </div>
                     <div>
                       <span>最高分</span>
@@ -3733,99 +3800,107 @@ export default function Home() {
                     ))}
                   </div>
                   {rewardNotice && <div className="reward-toast">{rewardNotice}</div>}
-                  <div className="plane-list" aria-label="选择战机">
-                    {hangarGroups.map((group) => (
-                      <section className="faction-section" key={group.faction}>
-                        <div className="faction-title">
-                          <span>{group.title}</span>
-                          <small>
-                            出击时对阵{getFactionLabel(group.faction === "china" ? "usa" : "china")}机群
-                          </small>
-                        </div>
-                        <div className="plane-grid">
-                          {group.planes.map((item) => {
-                            const unlocked = unlockedPlanes[item.id];
-                            const currentUpgrades = planeUpgrades[item.id] ?? defaultUpgrades;
-                            const active = selectedPlane === item.id;
-                            const unlockable = canAffordPlane(item.id, credits, inventory);
-                            return (
-                              <button
-                                className={["plane-card", active ? "active" : "", unlocked ? "unlocked" : "locked"].filter(Boolean).join(" ")}
-                                type="button"
-                                key={item.id}
-                                onClick={() => (unlocked ? selectPlane(item.id) : unlockPlane(item.id))}
-                                disabled={!unlocked && !unlockable}
-                              >
-                                <div className={getPlanePreviewClass(item.id)} aria-hidden="true">
-                                  <i />
-                                </div>
-                                <span>
-                                  {item.label}
-                                  <small>{item.role}</small>
-                                </span>
-                                <strong>
-                                  {unlocked
-                                    ? `血量 ${getMaxHp(currentUpgrades, item.id)} · 燃油 ${getMaxFuel(currentUpgrades, item.id)}`
-                                    : `${unlockable ? "解锁" : "需要"} ${formatPlaneRequirement(item.id)}`}
-                                </strong>
-                              </button>
-                            );
-                          })}
-                        </div>
-                      </section>
-                    ))}
-                  </div>
-                  <div className="upgrade-list" aria-label="战机升级">
-                    {upgradeCatalog.map((meta) => {
-                      const level = upgrades[meta.key];
-                      const maxed = level >= meta.max;
-                      const affordable = !maxed && canAffordUpgrade(meta, level, credits, inventory);
-                      return (
+                  {homeTab === "upgrade" && (
+                    <>
+                      <div className="plane-list" aria-label="选择战机">
+                        {hangarGroups.map((group) => (
+                          <section className="faction-section" key={group.faction}>
+                            <div className="faction-title">
+                              <span>{group.title}</span>
+                              <small>
+                                出击时对阵{getFactionLabel(group.faction === "china" ? "usa" : "china")}机群
+                              </small>
+                            </div>
+                            <div className="plane-grid">
+                              {group.planes.map((item) => {
+                                const unlocked = unlockedPlanes[item.id];
+                                const currentUpgrades = planeUpgrades[item.id] ?? defaultUpgrades;
+                                const active = selectedPlane === item.id;
+                                const unlockable = canAffordPlane(item.id, credits, inventory);
+                                return (
+                                  <button
+                                    className={["plane-card", active ? "active" : "", unlocked ? "unlocked" : "locked"].filter(Boolean).join(" ")}
+                                    type="button"
+                                    key={item.id}
+                                    onClick={() => (unlocked ? selectPlane(item.id) : unlockPlane(item.id))}
+                                    disabled={!unlocked && !unlockable}
+                                  >
+                                    <div className={getPlanePreviewClass(item.id)} aria-hidden="true">
+                                      <i />
+                                    </div>
+                                    <span>
+                                      {item.label}
+                                      <small>{item.role}</small>
+                                    </span>
+                                    <strong>
+                                      {unlocked
+                                        ? `血量 ${getMaxHp(currentUpgrades, item.id)} · 燃油 ${getMaxFuel(currentUpgrades, item.id)}`
+                                        : `${unlockable ? "解锁" : "需要"} ${formatPlaneRequirement(item.id)}`}
+                                    </strong>
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </section>
+                        ))}
+                      </div>
+                      <div className="upgrade-list" aria-label="战机升级">
+                        {upgradeCatalog.map((meta) => {
+                          const level = upgrades[meta.key];
+                          const maxed = level >= meta.max;
+                          const affordable = !maxed && canAffordUpgrade(meta, level, credits, inventory);
+                          return (
+                            <button
+                              className="upgrade-card"
+                              type="button"
+                              key={meta.key}
+                              onClick={() => buyUpgrade(meta)}
+                              disabled={maxed || !affordable}
+                            >
+                              <span>
+                                {meta.label}
+                                <small>
+                                  {level}/{meta.max}
+                                </small>
+                              </span>
+                              <em>{meta.description}</em>
+                              <strong>{formatUpgradeRequirement(meta, level)}</strong>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </>
+                  )}
+                  {homeTab === "shop" && (
+                    <div className="shop-list" aria-label="商店礼包">
+                      {shopPacks.map((pack) => (
                         <button
-                          className="upgrade-card"
+                          className="shop-card"
                           type="button"
-                          key={meta.key}
-                          onClick={() => buyUpgrade(meta)}
-                          disabled={maxed || !affordable}
+                          key={pack.id}
+                          onClick={() => buyShopPack(pack.id)}
+                          disabled={credits < pack.cost}
                         >
-                          <span>
-                            {meta.label}
-                            <small>
-                              {level}/{meta.max}
-                            </small>
-                          </span>
-                          <em>{meta.description}</em>
-                          <strong>{formatUpgradeRequirement(meta, level)}</strong>
+                          <span>{pack.label}</span>
+                          <em>{pack.description}</em>
+                          <strong>{pack.cost} 战功</strong>
                         </button>
-                      );
-                    })}
-                  </div>
-                  <div className="shop-list" aria-label="商店礼包">
-                    {shopPacks.map((pack) => (
-                      <button
-                        className="shop-card"
-                        type="button"
-                        key={pack.id}
-                        onClick={() => buyShopPack(pack.id)}
-                        disabled={credits < pack.cost}
-                      >
-                        <span>{pack.label}</span>
-                        <em>{pack.description}</em>
-                        <strong>{pack.cost} 战功</strong>
-                      </button>
-                    ))}
-                  </div>
-                  <div className="panel-actions">
-                    <button className="primary-action" type="button" onClick={startStageGame}>
-                      关卡出击
-                    </button>
-                    <button className="secondary-action" type="button" onClick={startEndlessGame}>
-                      无尽模式
-                    </button>
-                    <button className="secondary-action" type="button" onClick={returnToMenu}>
-                      返回主界面
-                    </button>
-                  </div>
+                      ))}
+                    </div>
+                  )}
+                  {homeTab === "inventory" && (
+                    <div className="warehouse-grid" aria-label="蓝图仓库">
+                      {PLANE_IDS.map((planeId) => (
+                        <div className="warehouse-card" key={planeId}>
+                          <div className={getPlanePreviewClass(planeId)} aria-hidden="true">
+                            <i />
+                          </div>
+                          <span>{getPlaneMeta(planeId).label}蓝图</span>
+                          <strong>{inventory.planeBlueprints[planeId]}</strong>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </>
               )}
 
@@ -3906,6 +3981,20 @@ export default function Home() {
                     </button>
                   </div>
                 </>
+              )}
+              {(showMainMenu || showHangar) && (
+                <div className="home-tabs" aria-label="主界面导航">
+                  {homeTabs.map((tab) => (
+                    <button
+                      className={homeTab === tab.id ? "active" : ""}
+                      type="button"
+                      key={tab.id}
+                      onClick={() => openHomeTab(tab.id)}
+                    >
+                      {tab.label}
+                    </button>
+                  ))}
+                </div>
               )}
             </div>
           )}

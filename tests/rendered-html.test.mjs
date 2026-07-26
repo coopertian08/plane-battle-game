@@ -34,7 +34,10 @@ test("server-renders the plane battle game shell", async () => {
   assert.match(html, /飞机大战/);
   assert.match(html, /关卡出击/);
   assert.match(html, /无尽模式/);
-  assert.match(html, /进入机库/);
+  assert.match(html, /战斗/);
+  assert.match(html, /升级/);
+  assert.match(html, /商店/);
+  assert.match(html, /仓库/);
   assert.match(html, /当前战机/);
   assert.match(html, /血量/);
   assert.match(html, /燃油/);
@@ -86,8 +89,8 @@ test("keeps the finished game free of starter preview code", async () => {
   assert.match(page, /weaponSpritesRef/);
   assert.match(page, /terrainRef/);
   assert.match(page, /joystick-zone/);
-  assert.match(page, /SPRITE_COLUMNS = 5/);
-  assert.match(page, /SPRITE_ROWS = 3/);
+  assert.match(page, /SPRITE_COLUMNS = 7/);
+  assert.match(page, /SPRITE_ROWS = 2/);
   assert.match(page, /type PlaneId = \(typeof PLANE_IDS\)\[number\]/);
   assert.match(page, /type PlaneFaction = "china" \| "usa"/);
   assert.match(page, /type GameMode = "endless" \| "stage"/);
@@ -122,6 +125,7 @@ test("keeps the finished game free of starter preview code", async () => {
   assert.match(page, /getEnemyVariantForKind/);
   assert.match(page, /upgradeBlueprintLabels/);
   assert.match(page, /dailyRewards/);
+  assert.match(page, /type PlaneBlueprintState/);
   assert.match(page, /shopPacks/);
   assert.match(page, /readInventory/);
   assert.match(page, /saveInventory/);
@@ -129,6 +133,7 @@ test("keeps the finished game free of starter preview code", async () => {
   assert.match(page, /saveDailyCheckin/);
   assert.match(page, /getUpgradeRequirement/);
   assert.match(page, /getPlaneUnlockRequirement/);
+  assert.match(page, /rollPlaneBlueprint/);
   assert.match(page, /rollShopPack/);
   assert.match(page, /claimDailyReward/);
   assert.match(page, /buyShopPack/);
@@ -310,6 +315,10 @@ test("keeps the finished game free of starter preview code", async () => {
   assert.match(page, /formatPlaneRequirement/);
   assert.match(page, /formatUpgradeRequirement/);
   assert.match(page, /getPlanePreviewClass/);
+  assert.match(page, /type HomeTab = "battle" \| "upgrade" \| "shop" \| "inventory"/);
+  assert.match(page, /homeTabs/);
+  assert.match(page, /openHomeTab/);
+  assert.match(page, /warehouse-grid/);
   assert.match(page, /scaleRef = useRef\(\{ scale: 1, offsetX: 0, offsetY: 0/);
   assert.match(page, /const scale = Math\.max\(rect\.width \/ VIEW_WIDTH, rect\.height \/ VIEW_HEIGHT\)/);
   assert.match(page, /hangarGroups/);
@@ -343,7 +352,7 @@ test("keeps the finished game free of starter preview code", async () => {
   assert.match(css, /joystick-zone/);
   assert.match(css, /plane-preview/);
   assert.match(css, /url\("\.\.\/aircraft-sprites\.png"\)/);
-  assert.match(css, /background-size:\s*500% 300%/);
+  assert.match(css, /background-size:\s*700% 200%/);
   assert.match(css, /plane-j8/);
   assert.match(css, /plane-j10/);
   assert.match(css, /plane-j11/);
@@ -358,7 +367,7 @@ test("keeps the finished game free of starter preview code", async () => {
   assert.match(css, /plane-f117/);
   assert.match(css, /plane-f22/);
   assert.match(css, /plane-f35/);
-  assert.match(css, /plane-generated/);
+  assert.doesNotMatch(css, /plane-generated/);
   assert.match(css, /plane-list/);
   assert.match(css, /plane-grid/);
   assert.match(css, /faction-section/);
@@ -367,6 +376,8 @@ test("keeps the finished game free of starter preview code", async () => {
   assert.match(css, /blueprint-strip/);
   assert.match(css, /upgrade-list/);
   assert.match(css, /shop-list/);
+  assert.match(css, /home-tabs/);
+  assert.match(css, /warehouse-grid/);
   assert.match(css, /plane-card\.locked/);
   assert.match(packageJson, /"export:github-pages": "node scripts\/export-github-pages\.mjs"/);
   assert.match(exportScript, /dist", "github-pages"/);
