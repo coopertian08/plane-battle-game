@@ -208,6 +208,11 @@ test("keeps the finished game free of starter preview code", async () => {
   assert.match(page, /const warmingUp = \(enemy\.spawnWarmup \?\? 0\) > 0/);
   assert.match(page, /updateAllies/);
   assert.match(page, /getTakeoffFormationPoint/);
+  assert.match(page, /looseFormationOffsets/);
+  assert.match(page, /function getLooseFormationOffset/);
+  assert.match(page, /function getFormationPoint/);
+  assert.match(page, /function getNextEnemyFormationSlot/);
+  assert.match(page, /function getEnemyAttackFormationPoint/);
   assert.match(page, /positionWingmenForTakeoff/);
   assert.match(page, /fireGuns/);
   assert.match(page, /type Wreck/);
@@ -232,7 +237,11 @@ test("keeps the finished game free of starter preview code", async () => {
   assert.match(page, /getStageTarget/);
   assert.match(page, /getStageBossCount/);
   assert.match(page, /getStageWingmen/);
-  assert.match(page, /const wingmen = mode === "stage" \? getStageWingmen\(stage\) : 2/);
+  assert.match(page, /function getEnemyActiveCap\(state: GameState\)/);
+  assert.match(page, /state\.stage >= 12/);
+  assert.match(page, /return 7 \+ Math\.min\(3, Math\.floor\(state\.score \/ 8500\)\)/);
+  assert.match(page, /function getSpawnInterval\(state: GameState\)/);
+  assert.match(page, /const wingmen = mode === "stage" \? getStageWingmen\(stage\) : 5/);
   assert.match(page, /stage % 10 === 0/);
   assert.match(page, /stage % 5 === 0/);
   assert.match(page, /150 \+ Math\.max\(0, stage - 1\) \* 50/);
@@ -242,6 +251,9 @@ test("keeps the finished game free of starter preview code", async () => {
   assert.match(page, /\? "stealth"/);
   assert.match(page, /\? "heavy"/);
   assert.match(page, /spawnBossEnemy/);
+  assert.match(page, /const activeCap = getEnemyActiveCap\(state\)/);
+  assert.match(page, /const availableSlots = Math\.max\(0, activeCap - state\.enemies\.length\)/);
+  assert.match(page, /state\.enemies\.length < activeCap/);
   assert.match(page, /startStageGame/);
   assert.match(page, /safeStage/);
   assert.match(page, /关卡状态已重置/);

@@ -796,6 +796,21 @@ function getStageWingmen(stage: number) {
   return stage >= 2 && stage % 2 === 0 ? 2 : 0;
 }
 
+function getEnemyActiveCap(state: GameState) {
+  if (state.mode === "stage") {
+    if (state.stage >= 12) return 9;
+    if (state.stage >= 7) return 8;
+    return 7;
+  }
+
+  return 7 + Math.min(3, Math.floor(state.score / 8500));
+}
+
+function getSpawnInterval(state: GameState) {
+  if (state.mode === "stage") return Math.max(1.05, 1.78 - state.difficulty * 0.045);
+  return Math.max(0.82, 1.34 - state.difficulty * 0.034);
+}
+
 function getMaxHp(upgrades: UpgradeState, planeId: PlaneId) {
   return getPlaneMeta(planeId).baseHp + upgrades.armor * 42;
 }
@@ -866,17 +881,40 @@ function createAircraft(
   };
 }
 
-function getTakeoffFormationPoint(player: Aircraft, slot: number) {
-  const dir = direction(player.angle);
-  const perp = { x: -dir.y, y: dir.x };
-  const side = slot % 2 === 0 ? -1 : 1;
+const looseFormationOffsets = [
+  { rear: 142, lateral: -104 },
+  { rear: 142, lateral: 104 },
+  { rear: 252, lateral: -176 },
+  { rear: 252, lateral: 176 },
+  { rear: 342, lateral: 0 },
+  { rear: 392, lateral: -112 },
+  { rear: 392, lateral: 112 },
+  { rear: 478, lateral: -188 },
+  { rear: 478, lateral: 188 },
+];
+
+function getLooseFormationOffset(slot: number) {
+  if (looseFormationOffsets[slot]) return looseFormationOffsets[slot];
   const pair = Math.floor(slot / 2);
-  const rear = 158 + pair * 52;
-  const lateral = side * (122 + pair * 22);
+  const side = slot % 2 === 0 ? -1 : 1;
   return {
-    x: player.x - dir.x * rear + perp.x * lateral,
-    y: player.y - dir.y * rear + perp.y * lateral,
+    rear: 500 + pair * 42,
+    lateral: side * (128 + (pair % 3) * 44),
   };
+}
+
+function getFormationPoint(leader: Aircraft, slot: number, rearScale = 1, lateralScale = 1) {
+  const dir = direction(leader.angle);
+  const perp = { x: -dir.y, y: dir.x };
+  const offset = getLooseFormationOffset(slot);
+  return {
+    x: leader.x - dir.x * offset.rear * rearScale + perp.x * offset.lateral * lateralScale,
+    y: leader.y - dir.y * offset.rear * rearScale + perp.y * offset.lateral * lateralScale,
+  };
+}
+
+function getTakeoffFormationPoint(player: Aircraft, slot: number) {
+  return getFormationPoint(player, slot, 1.08, 1.16);
 }
 
 function positionWingmenForTakeoff(state: GameState) {
@@ -962,7 +1000,7 @@ function createGameState(
   };
 
   state.player.id = makeId(state);
-  const wingmen = mode === "stage" ? getStageWingmen(stage) : 2;
+  const wingmen = mode === "stage" ? getStageWingmen(stage) : 5;
   for (let index = 0; index < wingmen; index += 1) {
     const side = index % 2 === 0 ? -1 : 1;
     const ally = createAircraft(
@@ -1279,6 +1317,29 @@ function getBossHp(state: GameState, totalBosses = 1) {
   return Math.round((78 + state.difficulty * 15) * upgradePressure * doubleBossPenalty);
 }
 
+function getNextEnemyFormationSlot(state: GameState) {
+  const occupied = new Set(state.enemies.map((enemy) => enemy.wingSlot ?? -1));
+  const cap = getEnemyActiveCap(state);
+  for (let slot = 0; slot < cap; slot += 1) {
+    if (!occupied.has(slot)) return slot;
+  }
+  return state.enemies.length;
+}
+
+function getEnemyAttackFormationPoint(state: GameState, target: Aircraft, slot: number, preferred: number, kind: Aircraft["kind"]) {
+  const targetDir = direction(target.angle);
+  const targetPerp = { x: -targetDir.y, y: targetDir.x };
+  const offset = getLooseFormationOffset(slot);
+  const heavy = kind === "boss" || kind === "tank" || kind === "heavy";
+  const rear = preferred + offset.rear * (kind === "boss" ? 0.46 : heavy ? 0.38 : 0.32);
+  const lateralScale = kind === "boss" ? 1.18 : heavy ? 0.96 : 0.82;
+  const drift = Math.sin(state.time * 0.58 + slot * 1.21) * (kind === "boss" ? 68 : 38);
+  return {
+    x: target.x - targetDir.x * rear + targetPerp.x * (offset.lateral * lateralScale + drift),
+    y: target.y - targetDir.y * rear + targetPerp.y * (offset.lateral * lateralScale + drift),
+  };
+}
+
 function spawnBossEnemy(state: GameState, index = 0, totalBosses = 1) {
   const player = state.player;
   const dir = direction(player.angle + Math.PI + (index - (totalBosses - 1) / 2) * 0.62);
@@ -1298,6 +1359,7 @@ function spawnBossEnemy(state: GameState, index = 0, totalBosses = 1) {
   boss.missileTimer = 2.4 + index * 0.55;
   boss.spawnWarmup = 2.25 + index * 0.28;
   boss.variant = getEnemyVariantForKind(state, "boss", index);
+  boss.wingSlot = index;
   state.enemies.push(boss);
 }
 
@@ -1326,15 +1388,19 @@ function spawnRegularEnemy(state: GameState) {
             ? 10 + difficulty * 2
             : 6 + difficulty;
   const radius = kind === "tank" ? 35 : kind === "heavy" ? 34 : kind === "stealth" ? 29 : kind === "fighter" ? 30 : 27;
-  const angle = Math.random() * Math.PI * 2;
-  const range = randomBetween(1120, 1720);
+  const slot = getNextEnemyFormationSlot(state);
+  const preferred = kind === "tank" || kind === "heavy" ? 760 : kind === "stealth" ? 700 : 650;
+  const station = getEnemyAttackFormationPoint(state, player, slot, preferred, kind);
+  const entryDir = direction(player.angle + Math.PI + randomBetween(-0.42, 0.42));
+  const spawnX = station.x + entryDir.x * randomBetween(360, 760) + randomBetween(-120, 120);
+  const spawnY = station.y + entryDir.y * randomBetween(360, 760) + randomBetween(-120, 120);
   const enemy = createAircraft(
     state,
     "enemy",
     kind,
-    player.x + Math.cos(angle) * range,
-    player.y + Math.sin(angle) * range,
-    angleTo({ x: player.x + Math.cos(angle) * range, y: player.y + Math.sin(angle) * range }, player),
+    spawnX,
+    spawnY,
+    angleTo({ x: spawnX, y: spawnY }, station),
     hp,
     kind === "tank"
       ? 224 + difficulty * 4
@@ -1349,6 +1415,7 @@ function spawnRegularEnemy(state: GameState) {
   );
   enemy.spawnWarmup = randomBetween(1.15, 1.9);
   enemy.variant = getEnemyVariantForKind(state, kind, enemy.id);
+  enemy.wingSlot = slot;
   state.enemies.push(enemy);
 }
 
@@ -1726,25 +1793,30 @@ function updateAllies(state: GameState, dt: number) {
   const speedStats = getSpeedStats(state.upgrades, state.selectedPlane);
   for (const ally of state.allies) {
     const slot = ally.wingSlot ?? 0;
-    const side = slot % 2 === 0 ? -1 : 1;
     const dir = direction(player.angle);
     const perp = { x: -dir.y, y: dir.x };
-    const formation = {
-      x: player.x - dir.x * (135 + slot * 18) + perp.x * side * 92,
-      y: player.y - dir.y * (135 + slot * 18) + perp.y * side * 92,
-    };
+    const formation = getFormationPoint(player, slot);
+    const looseDrift = Math.sin(state.time * 0.62 + slot * 1.37);
+    formation.x += perp.x * looseDrift * 22 + dir.x * Math.cos(state.time * 0.48 + slot) * 12;
+    formation.y += perp.y * looseDrift * 22 + dir.y * Math.cos(state.time * 0.48 + slot) * 12;
     const target = chooseNearestEnemy(state, ally);
-    const desiredAngle = target && distance(target, ally) < 980 ? angleTo(ally, target) : angleTo(ally, formation);
+    const formationDist = distance(ally, formation);
+    const formationAngle = angleTo(ally, formation);
+    let desiredAngle = formationAngle;
+    if (target && distance(target, ally) < 980 && formationDist < 520) {
+      desiredAngle = turnToward(formationAngle, angleTo(ally, target), 0.72);
+    }
     ally.bank = (ally.bank ?? 0) + (clamp(normalizeAngle(desiredAngle - ally.angle) * 1.8, -1, 1) - (ally.bank ?? 0)) * Math.min(1, dt * 4);
     ally.angle = turnToward(ally.angle, desiredAngle, (plane.turnRate + 0.18) * dt);
-    ally.speed += (clamp(distance(ally, formation), 70, 420) - ally.speed) * dt * 0.75;
+    const speedTarget = clamp(player.speed + (formationDist - 120) * 0.52, speedStats.minSpeed, speedStats.maxSpeed);
+    ally.speed += (speedTarget - ally.speed) * dt * 0.82;
     ally.speed = clamp(ally.speed, speedStats.minSpeed, speedStats.maxSpeed);
     ally.throttle = clamp((ally.speed - speedStats.cruiseSpeed) / Math.max(1, speedStats.maxSpeed - speedStats.cruiseSpeed), -0.35, 1);
     const move = direction(ally.angle);
     ally.x += move.x * ally.speed * dt;
     ally.y += move.y * ally.speed * dt;
     ally.fireTimer -= dt;
-    if (target && distance(target, ally) < 920 && Math.abs(normalizeAngle(angleTo(ally, target) - ally.angle)) < 0.24 && ally.fireTimer <= 0) {
+    if (target && formationDist < 620 && distance(target, ally) < 920 && Math.abs(normalizeAngle(angleTo(ally, target) - ally.angle)) < 0.24 && ally.fireTimer <= 0) {
       fireGuns(state, ally, "ally");
       ally.fireTimer = 0.24;
     }
@@ -1761,14 +1833,7 @@ function updateEnemies(state: GameState, dt: number) {
     const weave = Math.sin(state.time * (boss ? 0.9 : enemy.kind === "stealth" ? 1.9 : 1.6) + enemy.id) * (boss ? 0.14 : enemy.kind === "stealth" ? 0.28 : 0.22);
     const preferred = boss ? 930 : enemy.kind === "tank" || enemy.kind === "heavy" ? 760 : enemy.kind === "stealth" ? 700 : 650;
     const dist = distance(enemy, target);
-    const targetDir = direction(target.angle);
-    const targetPerp = { x: -targetDir.y, y: targetDir.x };
-    const side = enemy.id % 2 === 0 ? -1 : 1;
-    const lateral = side * (boss ? 180 : enemy.kind === "tank" || enemy.kind === "heavy" ? 138 : 112) + Math.sin(state.time * 0.72 + enemy.id) * (boss ? 95 : 62);
-    const trailPoint = {
-      x: target.x - targetDir.x * preferred + targetPerp.x * lateral,
-      y: target.y - targetDir.y * preferred + targetPerp.y * lateral,
-    };
+    const trailPoint = getEnemyAttackFormationPoint(state, target, enemy.wingSlot ?? enemy.id, preferred, enemy.kind);
     const separation = getEnemySeparation(state, enemy);
     const separationForce = Math.hypot(separation.x, separation.y);
     const separatedTrailPoint = {
@@ -1865,28 +1930,37 @@ function updateTankers(state: GameState, dt: number) {
 }
 
 function spawnForMode(state: GameState) {
+  const activeCap = getEnemyActiveCap(state);
   if (state.mode === "stage") {
     const regularEnemies = state.enemies.filter((enemy) => enemy.kind !== "boss").length;
-    if (state.stageKills + regularEnemies < state.stageTarget) {
+    const availableSlots = Math.max(0, activeCap - state.enemies.length);
+    if (availableSlots > 0 && state.stageKills + regularEnemies < state.stageTarget) {
       spawnRegularEnemy(state);
-    } else if (state.stageBossesSpawned < state.stageBossesRequired) {
+    } else if (availableSlots > 0 && state.stageBossesSpawned < state.stageBossesRequired) {
       const totalBosses = state.stageBossesRequired;
-      for (let index = 0; index < totalBosses; index += 1) spawnBossEnemy(state, index, totalBosses);
-      state.stageBossesSpawned = totalBosses;
-      addFloater(state, totalBosses > 1 ? "双机来袭" : "Boss来袭", state.player.x, state.player.y - 140, "#fb7185");
+      const firstBossInWave = state.stageBossesSpawned === 0;
+      const nextBosses = Math.min(totalBosses - state.stageBossesSpawned, availableSlots);
+      for (let index = 0; index < nextBosses; index += 1) {
+        spawnBossEnemy(state, state.stageBossesSpawned + index, totalBosses);
+      }
+      state.stageBossesSpawned += nextBosses;
+      if (nextBosses > 0 && firstBossInWave) {
+        addFloater(state, totalBosses > 1 ? "双机来袭" : "Boss来袭", state.player.x, state.player.y - 140, "#fb7185");
+      }
     }
-    state.spawnTimer = Math.max(0.68, 1.35 - state.difficulty * 0.035);
+    state.spawnTimer = getSpawnInterval(state);
     return;
   }
 
-  const regularCap = 4 + Math.min(5, state.difficulty);
+  const bossCount = state.enemies.filter((enemy) => enemy.kind === "boss").length;
+  const regularCap = Math.max(0, activeCap - bossCount);
   if (state.enemies.filter((enemy) => enemy.kind !== "boss").length < regularCap) spawnRegularEnemy(state);
-  if (state.score >= state.nextBossScore && !state.enemies.some((enemy) => enemy.kind === "boss")) {
+  if (state.score >= state.nextBossScore && state.enemies.length < activeCap && !state.enemies.some((enemy) => enemy.kind === "boss")) {
     state.nextBossScore += 2100 + state.difficulty * 260;
     spawnBossEnemy(state);
     addFloater(state, "Boss来袭", state.player.x, state.player.y - 140, "#fb7185");
   }
-  state.spawnTimer = Math.max(0.55, 1.05 - state.difficulty * 0.035);
+  state.spawnTimer = getSpawnInterval(state);
 }
 
 function updateEffects(state: GameState, dt: number) {
@@ -1959,7 +2033,7 @@ function updateTakeoff(state: GameState, dt: number) {
 
   if (progress >= 1) {
     state.phase = "running";
-    state.spawnTimer = 0.72;
+    state.spawnTimer = getSpawnInterval(state);
     player.invulnerable = Math.max(player.invulnerable ?? 0, 1.15);
     addFloater(state, "起飞", player.x, player.y - 72, "#bae6fd");
   }
