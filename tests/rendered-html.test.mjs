@@ -317,6 +317,7 @@ test("keeps the finished game free of starter preview code", async () => {
   assert.match(exportScript, /prefixRootAssetPaths/);
   assert.match(exportScript, /writeFile\(resolve\(outDir, "index\.html"\)/);
   assert.match(pagesWorkflow, /Deploy GitHub Pages/);
+  assert.match(pagesWorkflow, /enablement:\s*true/);
   assert.match(pagesWorkflow, /actions\/deploy-pages@v4/);
   assert.doesNotMatch(page + layout + css, /SkeletonPreview|codex-preview|Building your site/);
 });
