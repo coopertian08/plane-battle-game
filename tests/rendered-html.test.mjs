@@ -190,6 +190,11 @@ test("keeps the finished game free of starter preview code", async () => {
   assert.match(page, /\.filter\(\(enemy\) => !isStealthEnemy\(enemy\)\)/);
   assert.match(page, /function isStealthEnemy/);
   assert.match(page, /radarRange/);
+  assert.match(page, /function getPlaneTier\(planeId: PlaneId\)/);
+  assert.match(page, /function getRadarRange\(planeId: PlaneId\)/);
+  assert.match(page, /1750 \+ getPlaneTier\(planeId\) \* 420/);
+  assert.match(page, /distance\(player, aircraft\) <= radarRange/);
+  assert.doesNotMatch(page, /const limit = dist > 44 \? 44 \/ dist : 1/);
   assert.match(page, /chooseEnemyTarget/);
   assert.match(page, /chooseNearestEnemy/);
   assert.match(page, /updateEnemies/);
@@ -227,6 +232,7 @@ test("keeps the finished game free of starter preview code", async () => {
   assert.match(page, /getStageTarget/);
   assert.match(page, /getStageBossCount/);
   assert.match(page, /getStageWingmen/);
+  assert.match(page, /const wingmen = mode === "stage" \? getStageWingmen\(stage\) : 2/);
   assert.match(page, /stage % 10 === 0/);
   assert.match(page, /stage % 5 === 0/);
   assert.match(page, /150 \+ Math\.max\(0, stage - 1\) \* 50/);
@@ -261,6 +267,8 @@ test("keeps the finished game free of starter preview code", async () => {
   assert.match(page, /rgba\(248, 113, 113, 0\.95\)/);
   assert.match(page, /updateAircraftCollisions/);
   assert.match(page, /collisionCooldown/);
+  assert.match(page, /function getEnemySeparation/);
+  assert.match(page, /a\.side === "enemy" && b\.side === "enemy"/);
   assert.match(page, /trailPoint/);
   assert.match(page, /readPlaneUpgrades/);
   assert.match(page, /savePlaneUpgrades/);
@@ -290,6 +298,9 @@ test("keeps the finished game free of starter preview code", async () => {
   assert.match(css, /radar-panel/);
   assert.match(css, /radar-scope/);
   assert.match(css, /radar-sweep/);
+  assert.match(css, /conic-gradient\(\s*from -2deg/);
+  assert.match(css, /radar-sweep::before/);
+  assert.match(css, /linear-gradient\(90deg, rgba\(187, 247, 208, 0\.95\)/);
   assert.match(css, /radar-blip\.enemy/);
   assert.match(css, /fuel-meter/);
   assert.match(css, /joystick-zone/);

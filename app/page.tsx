@@ -260,6 +260,7 @@ type HudState = {
   bossMaxHp: number;
   earnedCredits: number;
   allies: number;
+  radarRange: number;
   radarBlips: RadarBlip[];
 };
 
@@ -314,6 +315,7 @@ const initialHud: HudState = {
   bossMaxHp: 0,
   earnedCredits: 0,
   allies: 0,
+  radarRange: 0,
   radarBlips: [],
 };
 
@@ -620,6 +622,15 @@ function getFactionLabel(faction: PlaneFaction) {
 
 function getPlaneIdsByFaction(faction: PlaneFaction): readonly PlaneId[] {
   return faction === "china" ? CHINA_PLANE_IDS : USA_PLANE_IDS;
+}
+
+function getPlaneTier(planeId: PlaneId) {
+  const factionIds = getPlaneIdsByFaction(getPlaneMeta(planeId).faction);
+  return Math.max(0, factionIds.indexOf(planeId));
+}
+
+function getRadarRange(planeId: PlaneId) {
+  return 1750 + getPlaneTier(planeId) * 420;
 }
 
 function getOpponentFaction(planeId: PlaneId): PlaneFaction {
@@ -951,7 +962,7 @@ function createGameState(
   };
 
   state.player.id = makeId(state);
-  const wingmen = mode === "stage" ? getStageWingmen(stage) : 0;
+  const wingmen = mode === "stage" ? getStageWingmen(stage) : 2;
   for (let index = 0; index < wingmen; index += 1) {
     const side = index % 2 === 0 ? -1 : 1;
     const ally = createAircraft(
@@ -990,26 +1001,24 @@ function snapshot(state: GameState): HudState {
       : heat > 72
         ? "高温"
         : "正常";
-  const radarRange = 2200;
+  const radarRange = getRadarRange(state.selectedPlane);
   const dir = direction(player.angle);
   const perp = { x: -dir.y, y: dir.x };
-  const radarBlips: RadarBlip[] = [...state.allies, ...state.enemies.filter((enemy) => !isStealthEnemy(enemy))].map((aircraft) => {
-    const rel = { x: aircraft.x - player.x, y: aircraft.y - player.y };
-    const forward = rel.x * dir.x + rel.y * dir.y;
-    const side = rel.x * perp.x + rel.y * perp.y;
-    const scale = 44 / radarRange;
-    const rawX = side * scale;
-    const rawY = -forward * scale;
-    const dist = Math.hypot(rawX, rawY);
-    const limit = dist > 44 ? 44 / dist : 1;
-    return {
-      id: aircraft.id,
-      x: 50 + rawX * limit,
-      y: 50 + rawY * limit,
-      side: aircraft.side === "enemy" ? "enemy" : "ally",
-      boss: aircraft.kind === "boss",
-    };
-  });
+  const radarBlips: RadarBlip[] = [...state.allies, ...state.enemies.filter((enemy) => !isStealthEnemy(enemy))]
+    .filter((aircraft) => distance(player, aircraft) <= radarRange)
+    .map((aircraft) => {
+      const rel = { x: aircraft.x - player.x, y: aircraft.y - player.y };
+      const forward = rel.x * dir.x + rel.y * dir.y;
+      const side = rel.x * perp.x + rel.y * perp.y;
+      const scale = 44 / radarRange;
+      return {
+        id: aircraft.id,
+        x: 50 + side * scale,
+        y: 50 - forward * scale,
+        side: aircraft.side === "enemy" ? "enemy" : "ally",
+        boss: aircraft.kind === "boss",
+      };
+    });
 
   return {
     phase: state.phase,
@@ -1034,6 +1043,7 @@ function snapshot(state: GameState): HudState {
     bossMaxHp: Math.ceil(bossMaxHp),
     earnedCredits: state.earnedCredits,
     allies: state.allies.length,
+    radarRange,
     radarBlips,
   };
 }
@@ -1542,6 +1552,7 @@ function updateAircraftCollisions(state: GameState, dt: number) {
     for (let j = i + 1; j < aircraft.length; j += 1) {
       const b = aircraft[j];
       if (!isAircraftActive(state, b)) continue;
+      if (a.side === "enemy" && b.side === "enemy") continue;
       const minimum = a.radius + b.radius + 12;
       const dist = distance(a, b);
       if (dist >= minimum) continue;
@@ -1565,6 +1576,20 @@ function updateAircraftCollisions(state: GameState, dt: number) {
       applyCollisionDamage(state, a, b, (a.x + b.x) / 2, (a.y + b.y) / 2);
     }
   }
+}
+
+function getEnemySeparation(state: GameState, enemy: Aircraft) {
+  const separation = { x: 0, y: 0 };
+  for (const other of state.enemies) {
+    if (other.id === enemy.id) continue;
+    const desiredGap = enemy.radius + other.radius + (enemy.kind === "boss" || other.kind === "boss" ? 190 : 132);
+    const gap = distance(enemy, other);
+    if (gap <= 0.001 || gap >= desiredGap) continue;
+    const strength = (desiredGap - gap) / desiredGap;
+    separation.x += ((enemy.x - other.x) / gap) * strength;
+    separation.y += ((enemy.y - other.y) / gap) * strength;
+  }
+  return separation;
 }
 
 function updateProjectiles(state: GameState, dt: number) {
@@ -1744,14 +1769,23 @@ function updateEnemies(state: GameState, dt: number) {
       x: target.x - targetDir.x * preferred + targetPerp.x * lateral,
       y: target.y - targetDir.y * preferred + targetPerp.y * lateral,
     };
-    const stationDist = distance(enemy, trailPoint);
+    const separation = getEnemySeparation(state, enemy);
+    const separationForce = Math.hypot(separation.x, separation.y);
+    const separatedTrailPoint = {
+      x: trailPoint.x + separation.x * (boss ? 360 : 285),
+      y: trailPoint.y + separation.y * (boss ? 360 : 285),
+    };
+    const stationDist = distance(enemy, separatedTrailPoint);
     const tooClose = dist < Math.max(target.radius + enemy.radius + 135, preferred * 0.42);
     const nearStation = stationDist < (boss ? 230 : 175);
-    const desiredAngle = tooClose
+    let desiredAngle = tooClose
       ? normalizeAngle(targetAngle + Math.PI + weave * 0.3)
       : nearStation
         ? targetAngle + weave * 0.16
-        : angleTo(enemy, trailPoint) + weave * 0.12;
+        : angleTo(enemy, separatedTrailPoint) + weave * 0.12;
+    if (separationForce > 0.04 && !tooClose) {
+      desiredAngle = turnToward(desiredAngle, Math.atan2(separation.y, separation.x), clamp(separationForce * 0.7, 0, 0.56));
+    }
     enemy.bank = (enemy.bank ?? 0) + (clamp(normalizeAngle(desiredAngle - enemy.angle) * 1.6, -1, 1) - (enemy.bank ?? 0)) * Math.min(1, dt * 4);
     enemy.angle = turnToward(enemy.angle, desiredAngle, turnRate * dt);
     const warmingUp = (enemy.spawnWarmup ?? 0) > 0;

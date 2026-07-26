@@ -134,11 +134,15 @@ button {
   overflow: hidden;
   border: 1px solid rgba(34, 197, 94, 0.52);
   border-radius: 50%;
+  isolation: isolate;
   background:
     linear-gradient(rgba(74, 222, 128, 0.12) 1px, transparent 1px),
     linear-gradient(90deg, rgba(74, 222, 128, 0.12) 1px, transparent 1px),
-    radial-gradient(circle, rgba(34, 197, 94, 0.2), rgba(2, 6, 23, 0.42) 64%);
+    radial-gradient(circle at 50% 50%, rgba(34, 197, 94, 0.24), rgba(2, 6, 23, 0.52) 66%);
   background-size: 23px 23px, 23px 23px, 100% 100%;
+  box-shadow:
+    inset 0 0 26px rgba(34, 197, 94, 0.26),
+    0 0 18px rgba(21, 128, 61, 0.22);
 }
 
 .radar-ring,
@@ -169,13 +173,47 @@ button {
 }
 
 .radar-sweep {
+  inset: 0;
+  border-radius: 50%;
+  transform-origin: 50% 50%;
+  background: conic-gradient(
+    from -2deg,
+    rgba(187, 247, 208, 0.4) 0deg,
+    rgba(74, 222, 128, 0.26) 14deg,
+    rgba(34, 197, 94, 0.1) 40deg,
+    rgba(34, 197, 94, 0) 64deg,
+    rgba(34, 197, 94, 0) 360deg
+  );
+  mix-blend-mode: screen;
+  animation: radar-scan 2.8s linear infinite;
+}
+
+.radar-sweep::before,
+.radar-sweep::after {
+  position: absolute;
+  content: "";
+  pointer-events: none;
+}
+
+.radar-sweep::before {
+  left: 50%;
+  top: calc(50% - 1px);
+  width: 50%;
+  height: 2px;
+  background: linear-gradient(90deg, rgba(187, 247, 208, 0.95), rgba(74, 222, 128, 0.52), transparent);
+  box-shadow: 0 0 10px rgba(134, 239, 172, 0.82);
+  transform-origin: left center;
+}
+
+.radar-sweep::after {
   left: 50%;
   top: 50%;
-  width: 50%;
-  height: 50%;
-  transform-origin: 0 0;
-  background: conic-gradient(from -18deg, rgba(74, 222, 128, 0.34), rgba(74, 222, 128, 0) 34deg);
-  animation: radar-scan 2.8s linear infinite;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: rgba(187, 247, 208, 0.84);
+  box-shadow: 0 0 14px rgba(134, 239, 172, 0.8);
+  transform: translate(-50%, -50%);
 }
 
 .radar-player {
