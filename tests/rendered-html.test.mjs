@@ -82,6 +82,7 @@ test("keeps the finished game free of starter preview code", async () => {
   assert.match(page, /spriteSlots/);
   assert.match(page, /weaponSpriteSlots/);
   assert.match(page, /drawAircraftSprite/);
+  assert.match(page, /const drawWidth = size \* \(cellWidth \/ cellHeight\)/);
   assert.match(page, /drawWeaponSprite/);
   assert.match(page, /drawEngineFlame/);
   assert.match(page, /getAircraftDrawSize/);
@@ -316,6 +317,7 @@ test("keeps the finished game free of starter preview code", async () => {
   assert.match(page, /formatUpgradeRequirement/);
   assert.match(page, /getPlanePreviewClass/);
   assert.match(page, /type HomeTab = "battle" \| "upgrade" \| "shop" \| "inventory"/);
+  assert.match(page, /menu-panel/);
   assert.match(page, /homeTabs/);
   assert.match(page, /openHomeTab/);
   assert.match(page, /warehouse-grid/);
@@ -334,6 +336,9 @@ test("keeps the finished game free of starter preview code", async () => {
   assert.doesNotMatch(page, /lives/);
   assert.doesNotMatch(page, /arrowleft|arrowright|arrowup|arrowdown/);
   assert.match(layout, /title:\s*"飞机大战"/);
+  assert.match(layout, /export const viewport/);
+  assert.match(layout, /width:\s*"device-width"/);
+  assert.match(layout, /initialScale:\s*1/);
   assert.match(css, /mobile-controls/);
   assert.match(css, /battle-hp/);
   assert.match(css, /boss-hp/);
@@ -351,8 +356,11 @@ test("keeps the finished game free of starter preview code", async () => {
   assert.match(css, /fuel-meter/);
   assert.match(css, /joystick-zone/);
   assert.match(css, /plane-preview/);
+  assert.match(css, /menu-panel/);
   assert.match(css, /url\("\.\.\/aircraft-sprites\.png"\)/);
   assert.match(css, /background-size:\s*700% 200%/);
+  assert.match(css, /width:\s*58px/);
+  assert.match(css, /height:\s*116px/);
   assert.match(css, /plane-j8/);
   assert.match(css, /plane-j10/);
   assert.match(css, /plane-j11/);

@@ -388,6 +388,9 @@ button {
   left: 50%;
   top: 50%;
   width: min(88vw, 350px);
+  max-height: calc(100dvh - 24px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
   transform: translate(-50%, -50%);
   padding: 22px;
   border: 1px solid rgba(226, 232, 240, 0.22);
@@ -398,10 +401,13 @@ button {
   text-align: center;
 }
 
+.menu-panel {
+  width: min(94vw, 430px);
+}
+
 .hangar-panel {
   width: min(94vw, 760px);
   max-height: calc(100dvh - 34px);
-  overflow-y: auto;
   text-align: left;
 }
 
@@ -422,11 +428,22 @@ button {
 }
 
 .main-plane-summary {
-  margin: 0 auto 14px;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  grid-template-rows: auto auto auto;
+  column-gap: 12px;
+  align-items: center;
+  margin: 0 auto 12px;
   padding: 10px 12px;
   border: 1px solid rgba(125, 211, 252, 0.28);
   border-radius: 8px;
   background: rgba(14, 165, 233, 0.14);
+  text-align: left;
+}
+
+.main-plane-summary .plane-preview {
+  grid-row: 1 / 4;
+  margin: 0;
 }
 
 .main-plane-summary em {
@@ -514,7 +531,7 @@ button {
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 6px;
   margin-top: 12px;
-  padding-top: 10px;
+  padding: 10px 0 1px;
   border-top: 1px solid rgba(148, 163, 184, 0.2);
   background: linear-gradient(180deg, rgba(15, 23, 42, 0), rgba(15, 23, 42, 0.94) 28%);
 }
@@ -684,7 +701,7 @@ button {
 }
 
 .plane-card {
-  min-height: 142px;
+  min-height: 188px;
   display: grid;
   justify-items: center;
   align-content: start;
@@ -757,7 +774,7 @@ button {
 
 .warehouse-card {
   min-width: 0;
-  min-height: 126px;
+  min-height: 154px;
   padding: 8px 6px;
   border: 1px solid rgba(125, 211, 252, 0.22);
   border-radius: 8px;
@@ -769,7 +786,7 @@ button {
 .warehouse-card .plane-preview {
   transform: scale(0.78);
   transform-origin: center top;
-  margin-bottom: -6px;
+  margin-bottom: -18px;
 }
 
 .warehouse-card span,
@@ -802,8 +819,8 @@ button {
 
 .plane-preview {
   position: relative;
-  width: 86px;
-  height: 64px;
+  width: 58px;
+  height: 116px;
   margin: 0 auto 5px;
   background-image: url("../aircraft-sprites.png");
   background-repeat: no-repeat;
@@ -992,8 +1009,13 @@ button {
 
 @media (max-width: 620px) {
   .start-panel {
-    width: min(92vw, 360px);
+    width: min(90vw, 340px);
+    max-height: calc(100dvh - 16px);
     padding: 16px;
+  }
+
+  .menu-panel {
+    width: min(90vw, 340px);
   }
 
   .start-panel h1 {
@@ -1003,6 +1025,10 @@ button {
   .hangar-panel {
     width: min(94vw, 390px);
     max-height: calc(100dvh - 18px);
+  }
+
+  .mode-actions {
+    grid-template-columns: 1fr;
   }
 
   .hangar-summary {
@@ -1029,14 +1055,24 @@ button {
   }
 
   .plane-card {
-    min-height: 126px;
+    min-height: 156px;
     padding: 8px 5px;
   }
 
   .plane-preview {
-    transform: scale(0.74);
+    transform: scale(0.72);
     transform-origin: center top;
-    margin-bottom: -4px;
+    margin-bottom: -28px;
+  }
+
+  .main-plane-summary {
+    grid-template-columns: auto minmax(0, 1fr);
+    column-gap: 10px;
+    padding: 9px 10px;
+  }
+
+  .main-plane-summary .plane-preview {
+    margin-bottom: -30px;
   }
 
   .plane-card span,
@@ -1062,6 +1098,10 @@ button {
   .warehouse-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 6px;
+  }
+
+  .warehouse-card {
+    min-height: 136px;
   }
 
   .upgrade-card,

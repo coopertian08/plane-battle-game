@@ -2634,15 +2634,16 @@ function drawAircraftSprite(ctx: CanvasRenderingContext2D, sprites: HTMLImageEle
   if (!slot) return false;
   const cellWidth = sprites.naturalWidth / SPRITE_COLUMNS;
   const cellHeight = sprites.naturalHeight / SPRITE_ROWS;
+  const drawWidth = size * (cellWidth / cellHeight);
   ctx.drawImage(
     sprites,
     slot.col * cellWidth,
     slot.row * cellHeight,
     cellWidth,
     cellHeight,
+    -drawWidth / 2,
     -size / 2,
-    -size / 2,
-    size,
+    drawWidth,
     size,
   );
   return true;
@@ -3733,7 +3734,7 @@ export default function Home() {
           )}
 
           {showPanel && (
-            <div className={showHangar ? "start-panel hangar-panel" : "start-panel"}>
+            <div className={["start-panel", showMainMenu ? "menu-panel" : "", showHangar ? "hangar-panel" : ""].filter(Boolean).join(" ")}>
               {showMainMenu && (
                 <>
                   <p>无限空战</p>
