@@ -361,7 +361,7 @@ button {
 }
 
 .hangar-panel {
-  width: min(94vw, 520px);
+  width: min(94vw, 760px);
   max-height: calc(100dvh - 34px);
   overflow-y: auto;
   text-align: left;
@@ -510,9 +510,34 @@ button {
 
 .plane-list {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 8px;
+  gap: 10px;
   margin: 0 0 12px;
+}
+
+.faction-section {
+  display: grid;
+  gap: 7px;
+}
+
+.faction-title {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 10px;
+  color: #f8fafc;
+  font-weight: 900;
+}
+
+.faction-title small {
+  color: #bae6fd;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.plane-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 8px;
 }
 
 .upgrade-list {
@@ -594,9 +619,9 @@ button {
   width: 86px;
   height: 64px;
   margin: 0 auto 5px;
-  background-image: url("/aircraft-sprites.png");
+  background-image: url("../aircraft-sprites.png");
   background-repeat: no-repeat;
-  background-size: 400% 200%;
+  background-size: 500% 300%;
 }
 
 .plane-preview::before,
@@ -610,15 +635,39 @@ button {
 }
 
 .plane-j10 {
-  background-position: 33.3333% 0;
+  background-position: 25% 0;
 }
 
 .plane-j15 {
-  background-position: 66.6667% 0;
+  background-position: 50% 0;
 }
 
 .plane-j20 {
+  background-position: 75% 0;
+}
+
+.plane-j35 {
   background-position: 100% 0;
+}
+
+.plane-f16 {
+  background-position: 0 50%;
+}
+
+.plane-f18 {
+  background-position: 25% 50%;
+}
+
+.plane-f15 {
+  background-position: 50% 50%;
+}
+
+.plane-f22 {
+  background-position: 75% 50%;
+}
+
+.plane-f35 {
+  background-position: 100% 50%;
 }
 
 .mobile-controls {
@@ -755,6 +804,16 @@ button {
 
   .plane-list {
     gap: 6px;
+  }
+
+  .plane-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .faction-title {
+    align-items: start;
+    flex-direction: column;
+    gap: 2px;
   }
 
   .plane-card {

@@ -4,11 +4,25 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 const VIEW_WIDTH = 1280;
 const VIEW_HEIGHT = 800;
-const AIRCRAFT_SPRITES_URL = "/aircraft-sprites.png";
-const WEAPON_SPRITES_URL = "/weapon-sprites.png";
-const TERRAIN_TILE_URL = "/terrain-tile.png";
-const SPRITE_COLUMNS = 4;
-const SPRITE_ROWS = 2;
+function publicAssetUrl(fileName: string) {
+  if (typeof window === "undefined") return `/${fileName}`;
+  const firstSegment = window.location.hostname.endsWith("github.io")
+    ? window.location.pathname.split("/").filter(Boolean)[0]
+    : "";
+  return `${firstSegment ? `/${firstSegment}` : ""}/${fileName}`;
+}
+
+const AIRCRAFT_SPRITES_URL = publicAssetUrl("aircraft-sprites.png");
+const WEAPON_SPRITES_URL = publicAssetUrl("weapon-sprites.png");
+const TERRAIN_TILE_URL = publicAssetUrl("terrain-tile.png");
+const AIRPORT_RUNWAY_URL = publicAssetUrl("airport-runway.png");
+const TERRAIN_TILE_SIZE = 1600;
+const TAKEOFF_RUNWAY_WORLD_WIDTH = 4600;
+const SPRITE_COLUMNS = 5;
+const SPRITE_ROWS = 3;
+const CHINA_PLANE_IDS = ["j8", "j10", "j15", "j20", "j35"] as const;
+const USA_PLANE_IDS = ["f16", "f18", "f15", "f22", "f35"] as const;
+const PLANE_IDS = [...CHINA_PLANE_IDS, ...USA_PLANE_IDS] as const;
 const WEAPON_COLUMNS = 3;
 const WEAPON_ROWS = 2;
 const BEST_SCORE_KEY = "plane-battle-best-score";
@@ -18,13 +32,14 @@ const PLANE_KEY = "plane-battle-selected-plane";
 const UNLOCKED_PLANES_KEY = "plane-battle-unlocked-planes";
 const CAMPAIGN_STAGE_KEY = "plane-battle-campaign-stage";
 
-type GamePhase = "menu" | "hangar" | "running" | "paused" | "playerDying" | "over" | "stageClear";
+type GamePhase = "menu" | "hangar" | "takeoff" | "running" | "paused" | "playerDying" | "over" | "stageClear";
 type GameMode = "endless" | "stage";
-type PlaneId = "j8" | "j10" | "j15" | "j20";
+type PlaneId = (typeof PLANE_IDS)[number];
+type PlaneFaction = "china" | "usa";
 type UpgradeKey = "firepower" | "missiles" | "armor" | "fuelTank" | "engine" | "speed" | "tanker";
 type EnemyKind = "scout" | "fighter" | "heavy" | "stealth" | "tank" | "boss";
 type ProjectileOwner = "player" | "ally" | "enemy";
-type SpriteKey = PlaneId | "enemy" | "enemyHeavy" | "tanker";
+type SpriteKey = PlaneId | "tanker";
 type WeaponSpriteKey = "playerTracer" | "enemyTracer" | "missile" | "heavyMissile" | "blast" | "smoke";
 
 type UpgradeState = Record<UpgradeKey, number>;
@@ -33,6 +48,7 @@ type PlaneUnlockState = Record<PlaneId, boolean>;
 
 type PlaneMeta = {
   id: PlaneId;
+  faction: PlaneFaction;
   label: string;
   role: string;
   gunName: string;
@@ -97,6 +113,8 @@ type Aircraft = {
   missileTimer?: number;
   burstRemaining?: number;
   burstTimer?: number;
+  collisionCooldown?: number;
+  variant?: PlaneId;
 };
 
 type Projectile = {
@@ -159,6 +177,7 @@ type Wreck = {
   angle: number;
   kind: EnemyKind | PlaneId;
   side: Aircraft["side"];
+  variant?: PlaneId;
   radius: number;
   life: number;
   maxLife: number;
@@ -213,6 +232,8 @@ type GameState = {
   rewardClaimed: boolean;
   shake: number;
   time: number;
+  takeoffTimer: number;
+  takeoffDuration: number;
   nextId: number;
 };
 
@@ -262,6 +283,12 @@ const defaultUnlockedPlanes: PlaneUnlockState = {
   j10: false,
   j15: false,
   j20: false,
+  j35: false,
+  f16: true,
+  f18: false,
+  f15: false,
+  f22: false,
+  f35: false,
 };
 
 const initialHud: HudState = {
@@ -293,6 +320,7 @@ const initialHud: HudState = {
 const planeCatalog: PlaneMeta[] = [
   {
     id: "j8",
+    faction: "china",
     label: "歼-8II",
     role: "高速截击",
     gunName: "Type 23-III",
@@ -310,6 +338,7 @@ const planeCatalog: PlaneMeta[] = [
   },
   {
     id: "j10",
+    faction: "china",
     label: "歼-10C",
     role: "多用途空优",
     gunName: "GSh-23 / Type 23-3",
@@ -327,6 +356,7 @@ const planeCatalog: PlaneMeta[] = [
   },
   {
     id: "j15",
+    faction: "china",
     label: "歼-15T",
     role: "重型舰载",
     gunName: "GSh-30-1",
@@ -344,6 +374,7 @@ const planeCatalog: PlaneMeta[] = [
   },
   {
     id: "j20",
+    faction: "china",
     label: "歼-20",
     role: "隐身空优",
     gunName: "内置航炮",
@@ -358,6 +389,114 @@ const planeCatalog: PlaneMeta[] = [
     turnRate: 2.08,
     fuel: 365,
     damageBonus: 0.44,
+  },
+  {
+    id: "j35",
+    faction: "china",
+    label: "歼-35A",
+    role: "隐身多用途",
+    gunName: "内置航炮",
+    gunCaliber: 25,
+    gunBarrels: 1,
+    gunMount: "belly",
+    unlockCost: 3800,
+    baseHp: 360,
+    minSpeed: 188,
+    cruiseSpeed: 325,
+    maxSpeed: 528,
+    turnRate: 2.18,
+    fuel: 382,
+    damageBonus: 0.52,
+  },
+  {
+    id: "f16",
+    faction: "usa",
+    label: "F-16C",
+    role: "轻型多用途",
+    gunName: "M61A1 Vulcan",
+    gunCaliber: 20,
+    gunBarrels: 1,
+    gunMount: "leftIntake",
+    unlockCost: 0,
+    baseHp: 188,
+    minSpeed: 176,
+    cruiseSpeed: 286,
+    maxSpeed: 438,
+    turnRate: 2.04,
+    fuel: 240,
+    damageBonus: 0.05,
+  },
+  {
+    id: "f18",
+    faction: "usa",
+    label: "F/A-18E",
+    role: "舰载多用途",
+    gunName: "M61A2 Vulcan",
+    gunCaliber: 20,
+    gunBarrels: 1,
+    gunMount: "belly",
+    unlockCost: 780,
+    baseHp: 228,
+    minSpeed: 168,
+    cruiseSpeed: 278,
+    maxSpeed: 430,
+    turnRate: 1.96,
+    fuel: 274,
+    damageBonus: 0.14,
+  },
+  {
+    id: "f15",
+    faction: "usa",
+    label: "F-15EX",
+    role: "重型制空",
+    gunName: "M61A1 Vulcan",
+    gunCaliber: 20,
+    gunBarrels: 1,
+    gunMount: "rightRoot",
+    unlockCost: 1600,
+    baseHp: 302,
+    minSpeed: 172,
+    cruiseSpeed: 292,
+    maxSpeed: 468,
+    turnRate: 1.82,
+    fuel: 338,
+    damageBonus: 0.28,
+  },
+  {
+    id: "f22",
+    faction: "usa",
+    label: "F-22A",
+    role: "隐身空优",
+    gunName: "M61A2 Vulcan",
+    gunCaliber: 20,
+    gunBarrels: 1,
+    gunMount: "belly",
+    unlockCost: 2850,
+    baseHp: 336,
+    minSpeed: 188,
+    cruiseSpeed: 318,
+    maxSpeed: 512,
+    turnRate: 2.16,
+    fuel: 358,
+    damageBonus: 0.43,
+  },
+  {
+    id: "f35",
+    faction: "usa",
+    label: "F-35A",
+    role: "隐身打击",
+    gunName: "GAU-22/A",
+    gunCaliber: 25,
+    gunBarrels: 1,
+    gunMount: "belly",
+    unlockCost: 3650,
+    baseHp: 352,
+    minSpeed: 184,
+    cruiseSpeed: 310,
+    maxSpeed: 492,
+    turnRate: 2.06,
+    fuel: 372,
+    damageBonus: 0.48,
   },
 ];
 
@@ -418,9 +557,13 @@ const spriteSlots: Record<SpriteKey, { col: number; row: number }> = {
   j10: { col: 1, row: 0 },
   j15: { col: 2, row: 0 },
   j20: { col: 3, row: 0 },
-  enemy: { col: 0, row: 1 },
-  enemyHeavy: { col: 1, row: 1 },
-  tanker: { col: 2, row: 1 },
+  j35: { col: 4, row: 0 },
+  f16: { col: 0, row: 1 },
+  f18: { col: 1, row: 1 },
+  f15: { col: 2, row: 1 },
+  f22: { col: 3, row: 1 },
+  f35: { col: 4, row: 1 },
+  tanker: { col: 0, row: 2 },
 };
 
 const weaponSpriteSlots: Record<WeaponSpriteKey, WeaponSpriteSlot> = {
@@ -471,8 +614,20 @@ function getPlaneMeta(planeId: PlaneId) {
   return planeCatalog.find((plane) => plane.id === planeId) ?? planeCatalog[0];
 }
 
+function getFactionLabel(faction: PlaneFaction) {
+  return faction === "china" ? "中国" : "美国";
+}
+
+function getPlaneIdsByFaction(faction: PlaneFaction): readonly PlaneId[] {
+  return faction === "china" ? CHINA_PLANE_IDS : USA_PLANE_IDS;
+}
+
+function getOpponentFaction(planeId: PlaneId): PlaneFaction {
+  return getPlaneMeta(planeId).faction === "china" ? "usa" : "china";
+}
+
 function isPlaneId(kind: Aircraft["kind"]): kind is PlaneId {
-  return kind === "j8" || kind === "j10" || kind === "j15" || kind === "j20";
+  return PLANE_IDS.includes(kind as PlaneId);
 }
 
 function isStealthEnemy(aircraft: Aircraft) {
@@ -480,12 +635,7 @@ function isStealthEnemy(aircraft: Aircraft) {
 }
 
 function createDefaultPlaneUpgrades(): PlaneUpgradeState {
-  return {
-    j8: { ...defaultUpgrades },
-    j10: { ...defaultUpgrades },
-    j15: { ...defaultUpgrades },
-    j20: { ...defaultUpgrades },
-  };
+  return Object.fromEntries(PLANE_IDS.map((planeId) => [planeId, { ...defaultUpgrades }])) as PlaneUpgradeState;
 }
 
 function sanitizeUpgrades(upgrades?: Partial<UpgradeState> & Record<string, unknown>): UpgradeState {
@@ -545,30 +695,23 @@ function readPlaneUpgrades(): PlaneUpgradeState {
 
   try {
     const parsed = JSON.parse(window.localStorage.getItem(UPGRADES_KEY) ?? "{}") as Record<string, unknown>;
-    if ("j8" in parsed || "j10" in parsed || "j15" in parsed || "j20" in parsed) {
-      return {
-        j8: sanitizeUpgrades(parsed.j8 as Record<string, unknown>),
-        j10: sanitizeUpgrades(parsed.j10 as Record<string, unknown>),
-        j15: sanitizeUpgrades(parsed.j15 as Record<string, unknown>),
-        j20: sanitizeUpgrades(parsed.j20 as Record<string, unknown>),
-      };
+    const next = createDefaultPlaneUpgrades();
+    const hasPlaneKeys = PLANE_IDS.some((planeId) => planeId in parsed);
+    if (hasPlaneKeys) {
+      for (const planeId of PLANE_IDS) {
+        if (planeId in parsed) next[planeId] = sanitizeUpgrades(parsed[planeId] as Record<string, unknown>);
+      }
+      return next;
     }
-
     if ("falcon" in parsed || "vanguard" in parsed || "raptor" in parsed) {
-      return {
-        j8: sanitizeUpgrades(parsed.falcon as Record<string, unknown>),
-        j10: sanitizeUpgrades(parsed.vanguard as Record<string, unknown>),
-        j15: sanitizeUpgrades(parsed.raptor as Record<string, unknown>),
-        j20: { ...defaultUpgrades },
-      };
+      next.j8 = sanitizeUpgrades(parsed.falcon as Record<string, unknown>);
+      next.j10 = sanitizeUpgrades(parsed.vanguard as Record<string, unknown>);
+      next.j15 = sanitizeUpgrades(parsed.raptor as Record<string, unknown>);
+      return next;
     }
 
-    return {
-      j8: sanitizeUpgrades(parsed),
-      j10: { ...defaultUpgrades },
-      j15: { ...defaultUpgrades },
-      j20: { ...defaultUpgrades },
-    };
+    next.j8 = sanitizeUpgrades(parsed);
+    return next;
   } catch {
     return createDefaultPlaneUpgrades();
   }
@@ -585,12 +728,13 @@ function readUnlockedPlanes(): PlaneUnlockState {
 
   try {
     const parsed = JSON.parse(window.localStorage.getItem(UNLOCKED_PLANES_KEY) ?? "{}") as Record<string, unknown>;
-    return {
-      j8: true,
-      j10: Boolean(parsed.j10 ?? parsed.vanguard),
-      j15: Boolean(parsed.j15 ?? parsed.raptor),
-      j20: Boolean(parsed.j20),
-    };
+    const next = { ...defaultUnlockedPlanes };
+    for (const planeId of PLANE_IDS) {
+      next[planeId] = Boolean(parsed[planeId]) || next[planeId];
+    }
+    next.j10 = Boolean(parsed.j10 ?? parsed.vanguard) || next.j10;
+    next.j15 = Boolean(parsed.j15 ?? parsed.raptor) || next.j15;
+    return next;
   } catch {
     return { ...defaultUnlockedPlanes };
   }
@@ -607,7 +751,7 @@ function readSelectedPlane(unlocked: PlaneUnlockState) {
   const stored = window.localStorage.getItem(PLANE_KEY);
   const legacyMap: Record<string, PlaneId> = { falcon: "j8", vanguard: "j10", raptor: "j15" };
   const planeId = ((stored && legacyMap[stored]) || stored || "j8") as PlaneId;
-  return planeCatalog.some((plane) => plane.id === planeId) && unlocked[planeId] ? planeId : "j8";
+  return PLANE_IDS.includes(planeId) && unlocked[planeId] ? planeId : "j8";
 }
 
 function saveSelectedPlane(planeId: PlaneId) {
@@ -638,8 +782,7 @@ function getStageDifficulty(stage: number) {
 }
 
 function getStageWingmen(stage: number) {
-  if (stage >= 6 && stage % 3 === 0) return 2;
-  return stage >= 2 && stage % 2 === 0 ? 1 : 0;
+  return stage >= 2 && stage % 2 === 0 ? 2 : 0;
 }
 
 function getMaxHp(upgrades: UpgradeState, planeId: PlaneId) {
@@ -678,17 +821,12 @@ function localToWorld(aircraft: Aircraft, localX: number, localY: number) {
 }
 
 function localToVisualWorld(aircraft: Aircraft, localX: number, localY: number) {
-  const bank = clamp(aircraft.bank ?? 0, -1, 1);
   const cobraPitch = aircraft.side === "player" ? Math.sin(((aircraft.cobraTimer ?? 0) / 1.05) * Math.PI) : 0;
-  const visualAngle = aircraft.angle + bank * 0.08;
-  const visualX = localX + localY * bank * 0.12;
-  const visualY = localY * (1 - Math.abs(bank) * 0.08 - cobraPitch * 0.14);
-  const dir = direction(visualAngle);
-  const perp = { x: -dir.y, y: dir.x };
-  return {
-    x: aircraft.x + perp.x * visualX + dir.x * -visualY,
-    y: aircraft.y + perp.y * visualX + dir.y * -visualY,
-  };
+  return localToWorld(aircraft, localX, localY * (1 - cobraPitch * 0.12));
+}
+
+function getVisualLaunchAngle(aircraft: Aircraft, extraAngle = 0) {
+  return normalizeAngle(aircraft.angle + extraAngle);
 }
 
 function createAircraft(
@@ -715,6 +853,32 @@ function createAircraft(
     fireTimer: randomBetween(0.2, 0.8),
     radius,
   };
+}
+
+function getTakeoffFormationPoint(player: Aircraft, slot: number) {
+  const dir = direction(player.angle);
+  const perp = { x: -dir.y, y: dir.x };
+  const side = slot % 2 === 0 ? -1 : 1;
+  const pair = Math.floor(slot / 2);
+  const rear = 158 + pair * 52;
+  const lateral = side * (122 + pair * 22);
+  return {
+    x: player.x - dir.x * rear + perp.x * lateral,
+    y: player.y - dir.y * rear + perp.y * lateral,
+  };
+}
+
+function positionWingmenForTakeoff(state: GameState) {
+  for (const ally of state.allies) {
+    const target = getTakeoffFormationPoint(state.player, ally.wingSlot ?? 0);
+    ally.x = target.x;
+    ally.y = target.y;
+    ally.angle = state.player.angle;
+    ally.speed = state.player.speed * 0.98;
+    ally.bank = 0;
+    ally.throttle = 1;
+    ally.invulnerable = Math.max(ally.invulnerable ?? 0, state.takeoffDuration + 0.8);
+  }
 }
 
 function createGameState(
@@ -781,6 +945,8 @@ function createGameState(
     rewardClaimed: false,
     shake: 0,
     time: 0,
+    takeoffTimer: 0,
+    takeoffDuration: 3.35,
     nextId: 0,
   };
 
@@ -913,25 +1079,15 @@ function addFloater(state: GameState, text: string, x: number, y: number, color 
 
 function getGunPorts(state: GameState, aircraft: Aircraft) {
   const size = getAircraftDrawSize(aircraft);
+  const noseY = -size * 0.43;
   if (aircraft.side === "enemy") {
-    return [{ x: 0, y: -size * 0.43, angle: 0, powerScale: 1 }];
+    return [{ x: 0, y: noseY, angle: 0, powerScale: 1 }];
   }
 
   const plane = getPlaneMeta(isPlaneId(aircraft.kind) ? aircraft.kind : state.selectedPlane);
-  const mount = plane.gunMount === "leftIntake"
-    ? { x: -size * 0.16, y: -size * 0.31 }
-    : plane.gunMount === "rightRoot"
-      ? { x: size * 0.18, y: -size * 0.27 }
-      : { x: 0, y: -size * 0.39 };
+  const powerScale = plane.gunCaliber >= 30 ? 1.22 : plane.gunBarrels === 2 ? 1.12 : 1;
 
-  if (plane.gunBarrels === 2) {
-    return [
-      { x: mount.x - size * 0.018, y: mount.y, angle: -0.004, powerScale: 0.56 },
-      { x: mount.x + size * 0.018, y: mount.y, angle: 0.004, powerScale: 0.56 },
-    ];
-  }
-
-  return [{ x: mount.x, y: mount.y, angle: 0, powerScale: plane.gunCaliber >= 30 ? 1.22 : 1 }];
+  return [{ x: 0, y: noseY, angle: 0, powerScale }];
 }
 
 function getMissileRackPort(aircraft: Aircraft, side: number) {
@@ -944,11 +1100,12 @@ function getMissileRackPort(aircraft: Aircraft, side: number) {
 
 function addBullet(state: GameState, owner: ProjectileOwner, x: number, y: number, angle: number, speed: number, power: number) {
   const dir = direction(angle);
+  const muzzleOffset = owner === "enemy" ? 1.8 : 2;
   state.bullets.push({
     id: makeId(state),
     owner,
-    x,
-    y,
+    x: x + dir.x * muzzleOffset,
+    y: y + dir.y * muzzleOffset,
     vx: dir.x * speed,
     vy: dir.y * speed,
     power,
@@ -975,7 +1132,8 @@ function fireGuns(state: GameState, aircraft: Aircraft, owner: ProjectileOwner, 
 
   for (const port of ports) {
     const origin = localToWorld(aircraft, port.x, port.y);
-    addBullet(state, owner, origin.x, origin.y, aircraft.angle + port.angle, bulletSpeed + aircraft.speed * 0.35, basePower * port.powerScale);
+    const launchAngle = normalizeAngle(aircraft.angle + port.angle);
+    addBullet(state, owner, origin.x, origin.y, launchAngle, bulletSpeed + aircraft.speed * 0.35, basePower * port.powerScale);
   }
 
   if (!resetTimer) return;
@@ -1018,9 +1176,10 @@ function fireMissile(state: GameState) {
   if (state.phase !== "running" || (player.missileAmmo ?? 0) <= 0) return;
   const side = (player.missileAmmo ?? 0) % 2 === 0 ? -1 : 1;
   const rack = getMissileRackPort(player, side);
-  const origin = localToWorld(player, rack.x, rack.y);
+  const origin = localToVisualWorld(player, rack.x, rack.y);
   const target = chooseMissileTarget(state, player);
-  const launchAngle = target ? turnToward(player.angle, angleTo(player, target), 0.48) : player.angle;
+  const visualAngle = getVisualLaunchAngle(player);
+  const launchAngle = target ? turnToward(visualAngle, angleTo(player, target), 0.48) : visualAngle;
   const dir = direction(launchAngle);
   player.missileAmmo = Math.max(0, (player.missileAmmo ?? 0) - 1);
   state.bullets.push({
@@ -1045,8 +1204,8 @@ function fireMissile(state: GameState) {
 function fireEnemyMissile(state: GameState, enemy: Aircraft, target: Aircraft) {
   const side = enemy.id % 2 === 0 ? -1 : 1;
   const rack = getMissileRackPort(enemy, side);
-  const origin = localToWorld(enemy, rack.x, rack.y);
-  const launchAngle = turnToward(enemy.angle, angleTo(enemy, target), 0.38);
+  const origin = localToVisualWorld(enemy, rack.x, rack.y);
+  const launchAngle = turnToward(getVisualLaunchAngle(enemy), angleTo(enemy, target), 0.38);
   const dir = direction(launchAngle);
   const speed = 560 + enemy.speed * 0.55;
   state.bullets.push({
@@ -1128,6 +1287,7 @@ function spawnBossEnemy(state: GameState, index = 0, totalBosses = 1) {
   boss.fireTimer = totalBosses > 1 ? 1.5 + index * 0.42 : 1.15;
   boss.missileTimer = 2.4 + index * 0.55;
   boss.spawnWarmup = 2.25 + index * 0.28;
+  boss.variant = getEnemyVariantForKind(state, "boss", index);
   state.enemies.push(boss);
 }
 
@@ -1178,6 +1338,7 @@ function spawnRegularEnemy(state: GameState) {
     radius,
   );
   enemy.spawnWarmup = randomBetween(1.15, 1.9);
+  enemy.variant = getEnemyVariantForKind(state, kind, enemy.id);
   state.enemies.push(enemy);
 }
 
@@ -1227,6 +1388,15 @@ function chooseMissileTarget(state: GameState, shooter: Vector & { angle: number
   return forwardTarget;
 }
 
+function getEnemyVariantForKind(state: GameState, kind: EnemyKind, seed = 0): PlaneId {
+  const opponentIds = getPlaneIdsByFaction(getOpponentFaction(state.selectedPlane));
+  if (kind === "boss") return opponentIds[4] ?? opponentIds[3] ?? opponentIds[0];
+  if (kind === "stealth") return opponentIds[3 + (seed % 2)] ?? opponentIds[3] ?? opponentIds[0];
+  if (kind === "tank" || kind === "heavy") return opponentIds[2] ?? opponentIds[0];
+  if (kind === "fighter") return opponentIds[1] ?? opponentIds[0];
+  return opponentIds[0];
+}
+
 function destroyEnemy(state: GameState, enemy: Aircraft) {
   const points =
     enemy.kind === "boss"
@@ -1259,6 +1429,7 @@ function destroyEnemy(state: GameState, enemy: Aircraft) {
     angle: enemy.angle,
     kind: enemy.kind,
     side: enemy.side,
+    variant: enemy.variant,
     radius: enemy.radius,
     life: wreckLife,
     maxLife: wreckLife,
@@ -1290,8 +1461,15 @@ function detonateMissile(state: GameState, missile: Projectile) {
   }
 }
 
-function damageAircraft(state: GameState, target: Aircraft, amount: number, x: number, y: number) {
-  if (target.side === "player" && ((target.invulnerable ?? 0) > 0 || (target.cobraTimer ?? 0) > 0)) {
+function damageAircraft(
+  state: GameState,
+  target: Aircraft,
+  amount: number,
+  x: number,
+  y: number,
+  options: { ignoreInvulnerability?: boolean } = {},
+) {
+  if (!options.ignoreInvulnerability && target.side === "player" && ((target.invulnerable ?? 0) > 0 || (target.cobraTimer ?? 0) > 0)) {
     addFloater(state, "规避", x, y, "#bae6fd");
     return;
   }
@@ -1314,6 +1492,77 @@ function damageAircraft(state: GameState, target: Aircraft, amount: number, x: n
         state.bestScore = state.score;
         saveBestScore(state.score);
       }
+    }
+  }
+}
+
+function isAircraftActive(state: GameState, aircraft: Aircraft) {
+  if (aircraft.side === "player") return state.player.id === aircraft.id && state.player.hp > 0;
+  if (aircraft.side === "ally") return state.allies.some((ally) => ally.id === aircraft.id);
+  return state.enemies.some((enemy) => enemy.id === aircraft.id);
+}
+
+function getCollisionMass(aircraft: Aircraft) {
+  if (aircraft.kind === "boss") return 5;
+  if (aircraft.kind === "tank" || aircraft.kind === "heavy") return 2.6;
+  if (aircraft.side === "player") return 2.2;
+  if (aircraft.side === "ally") return 1.8;
+  return 1.25;
+}
+
+function applyCollisionDamage(state: GameState, a: Aircraft, b: Aircraft, x: number, y: number) {
+  const enemy = a.side === "enemy" ? a : b.side === "enemy" ? b : null;
+  const friendly = a.side === "enemy" ? b : b.side === "enemy" ? a : null;
+  if (!enemy || !friendly || (a.collisionCooldown ?? 0) > 0 || (b.collisionCooldown ?? 0) > 0) return;
+
+  a.collisionCooldown = 0.85;
+  b.collisionCooldown = 0.85;
+  const enemyWeight = enemy.kind === "boss" ? 1.55 : enemy.kind === "tank" || enemy.kind === "heavy" ? 1.22 : 1;
+  const friendlyDamage = enemy.kind === "boss" ? 118 : enemy.kind === "tank" || enemy.kind === "heavy" ? 88 : enemy.kind === "stealth" ? 76 : 66;
+  const enemyDamage = enemy.kind === "boss" ? 90 + state.difficulty * 5 : Math.max(enemy.maxHp * 0.78, 54 + friendly.radius * 0.9);
+
+  state.shake = Math.max(state.shake, enemy.kind === "boss" ? 26 : 18);
+  addExplosion(state, x, y, enemy.kind === "boss" ? 62 : 42, "#fb7185", 0.36);
+  addFloater(state, "碰撞", x, y - 28, "#fecaca");
+  damageAircraft(state, friendly, friendlyDamage * enemyWeight, x, y, { ignoreInvulnerability: true });
+  if (isAircraftActive(state, enemy)) {
+    damageAircraft(state, enemy, enemyDamage, x, y, { ignoreInvulnerability: true });
+  }
+}
+
+function updateAircraftCollisions(state: GameState, dt: number) {
+  const aircraft = [state.player, ...state.allies, ...state.enemies];
+  for (const unit of aircraft) {
+    unit.collisionCooldown = Math.max(0, (unit.collisionCooldown ?? 0) - dt);
+  }
+
+  for (let i = 0; i < aircraft.length; i += 1) {
+    const a = aircraft[i];
+    if (!isAircraftActive(state, a)) continue;
+    for (let j = i + 1; j < aircraft.length; j += 1) {
+      const b = aircraft[j];
+      if (!isAircraftActive(state, b)) continue;
+      const minimum = a.radius + b.radius + 12;
+      const dist = distance(a, b);
+      if (dist >= minimum) continue;
+
+      const fallbackAngle = normalizeAngle((a.id - b.id) * 1.73);
+      const nx = dist > 0.001 ? (b.x - a.x) / dist : Math.cos(fallbackAngle);
+      const ny = dist > 0.001 ? (b.y - a.y) / dist : Math.sin(fallbackAngle);
+      const overlap = minimum - Math.max(dist, 0.001);
+      const aMass = getCollisionMass(a);
+      const bMass = getCollisionMass(b);
+      const totalMass = aMass + bMass;
+      const aMove = overlap * (bMass / totalMass);
+      const bMove = overlap * (aMass / totalMass);
+
+      a.x -= nx * aMove;
+      a.y -= ny * aMove;
+      b.x += nx * bMove;
+      b.y += ny * bMove;
+      a.speed *= 0.96;
+      b.speed *= 0.94;
+      applyCollisionDamage(state, a, b, (a.x + b.x) / 2, (a.y + b.y) / 2);
     }
   }
 }
@@ -1485,18 +1734,35 @@ function updateEnemies(state: GameState, dt: number) {
     const boss = enemy.kind === "boss";
     const turnRate = boss ? 1.05 : enemy.kind === "stealth" ? 1.88 : enemy.kind === "tank" || enemy.kind === "heavy" ? 1.24 : 1.64;
     const weave = Math.sin(state.time * (boss ? 0.9 : enemy.kind === "stealth" ? 1.9 : 1.6) + enemy.id) * (boss ? 0.14 : enemy.kind === "stealth" ? 0.28 : 0.22);
-    const preferred = boss ? 760 : enemy.kind === "tank" || enemy.kind === "heavy" ? 640 : enemy.kind === "stealth" ? 560 : 520;
+    const preferred = boss ? 930 : enemy.kind === "tank" || enemy.kind === "heavy" ? 760 : enemy.kind === "stealth" ? 700 : 650;
     const dist = distance(enemy, target);
-    const tooClose = dist < preferred * 0.72;
-    const desiredAngle = tooClose ? normalizeAngle(targetAngle + Math.PI + weave * 0.45) : targetAngle + weave;
+    const targetDir = direction(target.angle);
+    const targetPerp = { x: -targetDir.y, y: targetDir.x };
+    const side = enemy.id % 2 === 0 ? -1 : 1;
+    const lateral = side * (boss ? 180 : enemy.kind === "tank" || enemy.kind === "heavy" ? 138 : 112) + Math.sin(state.time * 0.72 + enemy.id) * (boss ? 95 : 62);
+    const trailPoint = {
+      x: target.x - targetDir.x * preferred + targetPerp.x * lateral,
+      y: target.y - targetDir.y * preferred + targetPerp.y * lateral,
+    };
+    const stationDist = distance(enemy, trailPoint);
+    const tooClose = dist < Math.max(target.radius + enemy.radius + 135, preferred * 0.42);
+    const nearStation = stationDist < (boss ? 230 : 175);
+    const desiredAngle = tooClose
+      ? normalizeAngle(targetAngle + Math.PI + weave * 0.3)
+      : nearStation
+        ? targetAngle + weave * 0.16
+        : angleTo(enemy, trailPoint) + weave * 0.12;
     enemy.bank = (enemy.bank ?? 0) + (clamp(normalizeAngle(desiredAngle - enemy.angle) * 1.6, -1, 1) - (enemy.bank ?? 0)) * Math.min(1, dt * 4);
     enemy.angle = turnToward(enemy.angle, desiredAngle, turnRate * dt);
     const warmingUp = (enemy.spawnWarmup ?? 0) > 0;
     const arrival = warmingUp ? 0.34 : 1;
-    const speedTarget = (tooClose ? enemy.speed + 45 : dist > preferred ? enemy.speed + 80 : enemy.speed - 45) * arrival;
-    enemy.speed += (speedTarget - enemy.speed) * dt * 0.45;
     const maxEnemySpeed = boss ? 330 : enemy.kind === "stealth" ? 435 + state.difficulty * 9 : enemy.kind === "heavy" || enemy.kind === "tank" ? 350 + state.difficulty * 6 : 380 + state.difficulty * 8;
-    enemy.speed = clamp(enemy.speed, warmingUp ? (boss ? 118 : 104) : boss ? 200 : enemy.kind === "heavy" || enemy.kind === "tank" ? 175 : 190, maxEnemySpeed);
+    const minEnemySpeed = warmingUp ? (boss ? 118 : 104) : boss ? 200 : enemy.kind === "heavy" || enemy.kind === "tank" ? 175 : 190;
+    const holdSpeed = clamp(target.speed * 0.92 + (nearStation ? 0 : stationDist * 0.16), minEnemySpeed, maxEnemySpeed);
+    const retreatSpeed = clamp(target.speed + 105, minEnemySpeed, maxEnemySpeed);
+    const speedTarget = (tooClose ? retreatSpeed : holdSpeed) * arrival;
+    enemy.speed += (speedTarget - enemy.speed) * dt * 0.45;
+    enemy.speed = clamp(enemy.speed, minEnemySpeed, maxEnemySpeed);
     enemy.throttle = clamp((speedTarget - enemy.speed) / 160, -0.2, 1);
     const dir = direction(enemy.angle);
     enemy.x += dir.x * enemy.speed * dt;
@@ -1510,7 +1776,7 @@ function updateEnemies(state: GameState, dt: number) {
       (enemy.spawnWarmup ?? 0) <= 0 &&
       (enemy.burstRemaining ?? 0) <= 0 &&
       !tooClose &&
-      dist < (boss ? 980 : enemy.kind === "heavy" || enemy.kind === "tank" ? 860 : 780) &&
+      dist < (boss ? 1260 : enemy.kind === "heavy" || enemy.kind === "tank" ? 1060 : 960) &&
       aimError < (boss ? 0.3 : enemy.kind === "stealth" ? 0.28 : 0.22) &&
       enemy.fireTimer <= 0
     ) {
@@ -1633,12 +1899,49 @@ function tryCompleteStage(state: GameState) {
   }
 }
 
+function updateTakeoff(state: GameState, dt: number) {
+  const player = state.player;
+  const speedStats = getSpeedStats(state.upgrades, state.selectedPlane);
+  state.takeoffTimer += dt;
+  const progress = clamp(state.takeoffTimer / Math.max(0.1, state.takeoffDuration), 0, 1);
+  const eased = progress * progress * (3 - 2 * progress);
+  player.bank = (player.bank ?? 0) * Math.max(0, 1 - dt * 6);
+  player.angle = -Math.PI / 2;
+  player.throttle = 1;
+  player.speed = speedStats.minSpeed * 0.58 + (speedStats.cruiseSpeed * 1.04 - speedStats.minSpeed * 0.58) * eased;
+  player.heat = clamp((player.heat ?? 0) + (14 + state.upgrades.speed * 2) * dt, 0, 54);
+  player.fuel = Math.max(0, (player.fuel ?? 0) - (0.55 + state.upgrades.speed * 0.08) * dt);
+
+  const dir = direction(player.angle);
+  player.x += dir.x * player.speed * dt;
+  player.y += dir.y * player.speed * dt;
+
+  positionWingmenForTakeoff(state);
+
+  if (Math.random() < dt * 6) {
+    const back = direction(player.angle + Math.PI);
+    addSmoke(state, player.x + back.x * 42 + randomBetween(-10, 10), player.y + back.y * 42 + randomBetween(-10, 10), randomBetween(5, 9));
+  }
+
+  if (progress >= 1) {
+    state.phase = "running";
+    state.spawnTimer = 0.72;
+    player.invulnerable = Math.max(player.invulnerable ?? 0, 1.15);
+    addFloater(state, "起飞", player.x, player.y - 72, "#bae6fd");
+  }
+}
+
 function updateGame(state: GameState, dt: number, input: InputState) {
   state.time += dt;
   updateEffects(state, dt);
 
   if (state.phase === "playerDying") {
     if (state.explosions.length === 0) state.phase = "over";
+    return;
+  }
+
+  if (state.phase === "takeoff") {
+    updateTakeoff(state, dt);
     return;
   }
 
@@ -1649,6 +1952,7 @@ function updateGame(state: GameState, dt: number, input: InputState) {
   updateEnemies(state, dt);
   updateTankers(state, dt);
   updateProjectiles(state, dt);
+  updateAircraftCollisions(state, dt);
 
   state.spawnTimer -= dt;
   if (state.spawnTimer <= 0) spawnForMode(state);
@@ -1687,7 +1991,89 @@ function seededNoise(a: number, b: number) {
   return Math.abs(Math.sin(a * 127.1 + b * 311.7) * 43758.5453) % 1;
 }
 
-function drawSky(ctx: CanvasRenderingContext2D, state: GameState, terrain: HTMLImageElement | null) {
+function isOddTile(value: number) {
+  return Math.abs(value % 2) === 1;
+}
+
+function drawMirroredTerrainTile(
+  ctx: CanvasRenderingContext2D,
+  terrain: HTMLImageElement,
+  x: number,
+  y: number,
+  size: number,
+  gx: number,
+  gy: number,
+) {
+  const flipX = isOddTile(gx);
+  const flipY = isOddTile(gy);
+  ctx.save();
+  ctx.translate(x + (flipX ? size : 0), y + (flipY ? size : 0));
+  ctx.scale(flipX ? -1 : 1, flipY ? -1 : 1);
+  ctx.drawImage(terrain, 0, 0, size, size);
+  ctx.restore();
+}
+
+function drawTerrainHaze(ctx: CanvasRenderingContext2D, state: GameState) {
+  ctx.save();
+  ctx.globalCompositeOperation = "screen";
+  const grid = 980;
+  const startX = Math.floor((state.player.x - VIEW_WIDTH / 2) / grid) - 1;
+  const endX = Math.floor((state.player.x + VIEW_WIDTH / 2) / grid) + 1;
+  const startY = Math.floor((state.player.y - VIEW_HEIGHT / 2) / grid) - 1;
+  const endY = Math.floor((state.player.y + VIEW_HEIGHT / 2) / grid) + 1;
+  for (let gx = startX; gx <= endX; gx += 1) {
+    for (let gy = startY; gy <= endY; gy += 1) {
+      const density = seededNoise(gx * 4.9 + 19.1, gy * 3.6 - 7.3);
+      if (density < 0.5) continue;
+      const worldX = gx * grid + (seededNoise(gx + 5.7, gy - 3.1) - 0.5) * grid * 0.72;
+      const worldY = gy * grid + (seededNoise(gy + 11.4, gx + 2.8) - 0.5) * grid * 0.72;
+      const p = screenPoint(state, worldX, worldY);
+      const radius = 340 + seededNoise(gx - 13.5, gy + 8.2) * 520;
+      const alpha = 0.04 + density * 0.08;
+      const haze = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, radius);
+      haze.addColorStop(0, `rgba(226, 246, 255, ${alpha})`);
+      haze.addColorStop(0.58, `rgba(226, 246, 255, ${alpha * 0.42})`);
+      haze.addColorStop(1, "rgba(226, 246, 255, 0)");
+      ctx.fillStyle = haze;
+      ctx.fillRect(p.x - radius, p.y - radius, radius * 2, radius * 2);
+    }
+  }
+  ctx.restore();
+}
+
+function drawTakeoffAirfield(ctx: CanvasRenderingContext2D, state: GameState, airport: HTMLImageElement | null) {
+  if (!airport?.complete || airport.naturalWidth <= 0) return;
+  const fadeStart = state.takeoffDuration;
+  const fade = state.phase === "takeoff" ? 1 : clamp(1 - (state.time - fadeStart) / 1.6, 0, 1);
+  if (fade <= 0) return;
+
+  const runwayWorldWidth = TAKEOFF_RUNWAY_WORLD_WIDTH;
+  const runwayWorldHeight = runwayWorldWidth * (airport.naturalHeight / Math.max(1, airport.naturalWidth));
+  const center = screenPoint(state, 0, -120);
+  ctx.save();
+  ctx.globalAlpha = 0.64 * fade;
+  ctx.drawImage(airport, center.x - runwayWorldWidth / 2, center.y - runwayWorldHeight / 2, runwayWorldWidth, runwayWorldHeight);
+  ctx.fillStyle = `rgba(125, 211, 252, ${0.16 * fade})`;
+  ctx.fillRect(0, 0, VIEW_WIDTH, VIEW_HEIGHT);
+  ctx.restore();
+}
+
+function drawCloudCluster(ctx: CanvasRenderingContext2D, x: number, y: number, scale: number, alpha: number, seed: number) {
+  ctx.globalAlpha = alpha;
+  ctx.fillStyle = "#fff";
+  ctx.beginPath();
+  for (let index = 0; index < 6; index += 1) {
+    const ox = (seededNoise(seed + index * 2.7, seed - index * 1.9) - 0.5) * 160 * scale;
+    const oy = (seededNoise(seed - index * 3.3, seed + index * 2.1) - 0.5) * 54 * scale;
+    const w = (42 + seededNoise(seed + index * 5.1, 7.7) * 72) * scale;
+    const h = (12 + seededNoise(3.1, seed - index * 4.3) * 22) * scale;
+    const rot = (seededNoise(seed, index + 9.4) - 0.5) * 0.24;
+    ctx.ellipse(x + ox, y + oy, w, h, rot, 0, Math.PI * 2);
+  }
+  ctx.fill();
+}
+
+function drawSky(ctx: CanvasRenderingContext2D, state: GameState, terrain: HTMLImageElement | null, airport: HTMLImageElement | null) {
   const gradient = ctx.createLinearGradient(0, 0, 0, VIEW_HEIGHT);
   gradient.addColorStop(0, "#4aaeee");
   gradient.addColorStop(0.58, "#8ed8ff");
@@ -1696,7 +2082,7 @@ function drawSky(ctx: CanvasRenderingContext2D, state: GameState, terrain: HTMLI
   ctx.fillRect(0, 0, VIEW_WIDTH, VIEW_HEIGHT);
 
   if (terrain?.complete && terrain.naturalWidth > 0) {
-    const tile = 1600;
+    const tile = TERRAIN_TILE_SIZE;
     const startX = Math.floor((state.player.x - VIEW_WIDTH / 2) / tile) - 1;
     const endX = Math.floor((state.player.x + VIEW_WIDTH / 2) / tile) + 1;
     const startY = Math.floor((state.player.y - VIEW_HEIGHT / 2) / tile) - 1;
@@ -1706,44 +2092,47 @@ function drawSky(ctx: CanvasRenderingContext2D, state: GameState, terrain: HTMLI
     for (let gx = startX; gx <= endX; gx += 1) {
       for (let gy = startY; gy <= endY; gy += 1) {
         const p = screenPoint(state, gx * tile, gy * tile);
-        ctx.drawImage(terrain, p.x, p.y, tile, tile);
+        drawMirroredTerrainTile(ctx, terrain, p.x, p.y, tile, gx, gy);
       }
     }
     ctx.globalAlpha = 1;
+    drawTerrainHaze(ctx, state);
     ctx.fillStyle = "rgba(125, 211, 252, 0.22)";
     ctx.fillRect(0, 0, VIEW_WIDTH, VIEW_HEIGHT);
     ctx.restore();
   }
 
+  drawTakeoffAirfield(ctx, state, airport);
+
   ctx.save();
-  const grid = 540;
+  const grid = 620;
   const startX = Math.floor((state.player.x - VIEW_WIDTH / 2) / grid) - 1;
   const endX = Math.floor((state.player.x + VIEW_WIDTH / 2) / grid) + 1;
   const startY = Math.floor((state.player.y - VIEW_HEIGHT / 2) / grid) - 1;
   const endY = Math.floor((state.player.y + VIEW_HEIGHT / 2) / grid) + 1;
   for (let gx = startX; gx <= endX; gx += 1) {
     for (let gy = startY; gy <= endY; gy += 1) {
-      const noise = seededNoise(gx, gy);
-      const worldX = gx * grid + noise * 160;
-      const worldY = gy * grid + seededNoise(gy, gx) * 140;
-      const p = screenPoint(state, worldX, worldY);
-      ctx.globalAlpha = 0.12 + noise * 0.22;
-      ctx.fillStyle = "#fff";
-      ctx.beginPath();
-      ctx.ellipse(p.x - 64, p.y, 118, 32, 0, 0, Math.PI * 2);
-      ctx.ellipse(p.x + 32, p.y - 12, 132, 42, 0, 0, Math.PI * 2);
-      ctx.ellipse(p.x + 120, p.y + 5, 86, 28, 0, 0, Math.PI * 2);
-      ctx.fill();
+      const density = seededNoise(gx * 2.3, gy * 1.7);
+      if (density < 0.42) continue;
+      const count = density > 0.88 ? 2 : 1;
+      for (let index = 0; index < count; index += 1) {
+        const n1 = seededNoise(gx + index * 13.7, gy - index * 9.3);
+        const n2 = seededNoise(gy - index * 5.1, gx + index * 7.9);
+        const worldX = gx * grid + (n1 - 0.5) * grid * 0.92;
+        const worldY = gy * grid + (n2 - 0.5) * grid * 0.78;
+        const p = screenPoint(state, worldX, worldY);
+        const cloudScale = 0.46 + seededNoise(gx + 41 + index, gy - 17 - index) * 0.5;
+        const alpha = 0.06 + seededNoise(gx - 31 - index, gy + 23 + index) * 0.16;
+        drawCloudCluster(ctx, p.x, p.y, cloudScale, alpha, gx * 11.7 + gy * 3.9 + index * 19.3);
+      }
     }
   }
   ctx.restore();
 }
 
-function getAircraftSpriteKey(kind: Aircraft["kind"], side: Aircraft["side"]): SpriteKey {
-  if (side === "enemy") {
-    if (kind === "stealth") return "j20";
-    return kind === "boss" || kind === "tank" || kind === "heavy" ? "enemyHeavy" : "enemy";
-  }
+function getAircraftSpriteKey(kind: Aircraft["kind"], side: Aircraft["side"], variant?: PlaneId): SpriteKey {
+  if (side === "enemy" && variant) return variant;
+  if (side === "enemy" && !isPlaneId(kind)) return "f16";
   return isPlaneId(kind) ? kind : "j8";
 }
 
@@ -1752,10 +2141,10 @@ function getAircraftDrawSize(aircraft: Aircraft) {
   if (aircraft.kind === "tank") return 116;
   if (aircraft.kind === "heavy") return 112;
   if (aircraft.kind === "stealth") return 106;
-  if (aircraft.side === "ally") return aircraft.kind === "j20" ? 98 : aircraft.kind === "j15" ? 94 : 90;
+  if (aircraft.side === "ally") return aircraft.kind === "j20" || aircraft.kind === "j35" || aircraft.kind === "f22" || aircraft.kind === "f35" ? 98 : aircraft.kind === "j15" || aircraft.kind === "f15" ? 94 : 90;
   if (aircraft.side === "enemy") return aircraft.kind === "scout" ? 90 : 98;
-  if (aircraft.kind === "j20") return 116;
-  return aircraft.kind === "j15" ? 112 : 103;
+  if (aircraft.kind === "j20" || aircraft.kind === "j35" || aircraft.kind === "f22" || aircraft.kind === "f35") return 116;
+  return aircraft.kind === "j15" || aircraft.kind === "f15" ? 112 : 103;
 }
 
 function drawAircraftSprite(ctx: CanvasRenderingContext2D, sprites: HTMLImageElement | null, key: SpriteKey, size: number) {
@@ -1799,31 +2188,29 @@ function drawWeaponSprite(ctx: CanvasRenderingContext2D, sprites: HTMLImageEleme
 
 function getEnginePorts(aircraft: Aircraft) {
   const size = getAircraftDrawSize(aircraft);
-  if (aircraft.kind === "j8") {
-    return [{ x: -size * 0.028, y: size * 0.385 }];
+  const spriteKind = aircraft.variant ?? aircraft.kind;
+  if (spriteKind === "j8" || spriteKind === "j10" || spriteKind === "j35" || spriteKind === "f16" || spriteKind === "f35") {
+    return [{ x: 0, y: size * 0.39 }];
   }
-  if (aircraft.kind === "j10") {
-    return [{ x: -size * 0.092, y: size * 0.39 }];
-  }
-  if (aircraft.kind === "j15") {
+  if (spriteKind === "j15" || spriteKind === "f18" || spriteKind === "f15") {
     return [
-      { x: -size * 0.2, y: size * 0.36 },
-      { x: -size * 0.07, y: size * 0.36 },
+      { x: -size * 0.09, y: size * 0.36 },
+      { x: size * 0.09, y: size * 0.36 },
     ];
   }
-  if (aircraft.kind === "j20" || aircraft.kind === "stealth") {
+  if (spriteKind === "j20" || spriteKind === "f22" || aircraft.kind === "stealth") {
     return [
-      { x: -size * 0.055, y: size * 0.39 },
-      { x: size * 0.055, y: size * 0.39 },
+      { x: -size * 0.07, y: size * 0.39 },
+      { x: size * 0.07, y: size * 0.39 },
     ];
   }
   if (aircraft.kind === "boss" || aircraft.kind === "tank" || aircraft.kind === "heavy") {
     return [
-      { x: -size * 0.14, y: size * 0.31 },
-      { x: size * 0.025, y: size * 0.31 },
+      { x: -size * 0.08, y: size * 0.31 },
+      { x: size * 0.08, y: size * 0.31 },
     ];
   }
-  return [{ x: -size * 0.02, y: size * 0.315 }];
+  return [{ x: 0, y: size * 0.315 }];
 }
 
 function drawEngineFlame(
@@ -2006,12 +2393,11 @@ function drawAircraftAt(ctx: CanvasRenderingContext2D, state: GameState, aircraf
   if (aircraft.side === "player" && (aircraft.invulnerable ?? 0) > 0) {
     ctx.globalAlpha = 0.62 + Math.sin(state.time * 26) * 0.2;
   }
-  ctx.rotate(bank * 0.08);
-  ctx.transform(1, 0, bank * 0.12, 1 - Math.abs(bank) * 0.08 - cobraPitch * 0.14, 0, 0);
+  ctx.scale(1 - Math.abs(bank) * 0.055, 1 + Math.abs(bank) * 0.012 - cobraPitch * 0.14);
   if (aircraft.side === "enemy") {
     ctx.globalAlpha *= clamp(1 - (aircraft.spawnWarmup ?? 0) / 1.9, 0.18, 1);
   }
-  const drewSprite = drawAircraftSprite(ctx, sprites, getAircraftSpriteKey(aircraft.kind, aircraft.side), size * (1 + cobraPitch * 0.06));
+  const drewSprite = drawAircraftSprite(ctx, sprites, getAircraftSpriteKey(aircraft.kind, aircraft.side, aircraft.variant), size * (1 + cobraPitch * 0.06));
   if (!drewSprite) drawJet(ctx, aircraft.kind, aircraft.side, playerCobra);
   if (playerCobra > 0) {
     ctx.globalAlpha = 0.24 + cobraPitch * 0.28;
@@ -2045,7 +2431,7 @@ function drawWreckAt(ctx: CanvasRenderingContext2D, state: GameState, wreck: Wre
   ctx.translate(p.x, p.y);
   ctx.rotate(wreck.angle + Math.PI / 2);
   ctx.globalAlpha = alpha * 0.52;
-  const drewSprite = drawAircraftSprite(ctx, sprites, getAircraftSpriteKey(wreck.kind, wreck.side), size);
+  const drewSprite = drawAircraftSprite(ctx, sprites, getAircraftSpriteKey(wreck.kind, wreck.side, wreck.variant), size);
   if (!drewSprite) drawJet(ctx, wreck.kind, wreck.side, 0);
   ctx.globalCompositeOperation = "multiply";
   ctx.fillStyle = "rgba(15,23,42,0.45)";
@@ -2101,14 +2487,42 @@ function drawTanker(ctx: CanvasRenderingContext2D, state: GameState, tanker: Tan
   ctx.restore();
 }
 
+function drawCannonTracer(ctx: CanvasRenderingContext2D, state: GameState, bullet: Projectile) {
+  const speed = Math.max(1, Math.hypot(bullet.vx, bullet.vy));
+  const dir = { x: bullet.vx / speed, y: bullet.vy / speed };
+  const tracerLength = bullet.owner === "enemy" ? 11 : 12.5;
+  const headLead = bullet.owner === "enemy" ? 1.5 : 1.8;
+  const head = screenPoint(state, bullet.x + dir.x * headLead, bullet.y + dir.y * headLead);
+  const tail = screenPoint(state, bullet.x - dir.x * tracerLength, bullet.y - dir.y * tracerLength);
+
+  ctx.save();
+  ctx.globalCompositeOperation = "lighter";
+  ctx.lineCap = "round";
+  ctx.strokeStyle = bullet.owner === "enemy" ? "rgba(239, 68, 68, 0.34)" : "rgba(250, 204, 21, 0.3)";
+  ctx.lineWidth = bullet.owner === "enemy" ? 3.1 : 3.3;
+  ctx.beginPath();
+  ctx.moveTo(tail.x, tail.y);
+  ctx.lineTo(head.x, head.y);
+  ctx.stroke();
+
+  ctx.strokeStyle = bullet.owner === "enemy" ? "rgba(248, 113, 113, 0.95)" : "rgba(253, 224, 71, 0.96)";
+  ctx.lineWidth = bullet.owner === "enemy" ? 1.35 : 1.45;
+  ctx.beginPath();
+  ctx.moveTo(tail.x, tail.y);
+  ctx.lineTo(head.x, head.y);
+  ctx.stroke();
+  ctx.restore();
+}
+
 function drawGame(
   ctx: CanvasRenderingContext2D,
   state: GameState,
   sprites: HTMLImageElement | null,
   weaponSprites: HTMLImageElement | null,
   terrain: HTMLImageElement | null,
+  airport: HTMLImageElement | null,
 ) {
-  drawSky(ctx, state, terrain);
+  drawSky(ctx, state, terrain, airport);
   const shakeX = state.shake ? randomBetween(-state.shake, state.shake) * 0.18 : 0;
   const shakeY = state.shake ? randomBetween(-state.shake, state.shake) * 0.18 : 0;
   ctx.save();
@@ -2133,47 +2547,41 @@ function drawGame(
   drawAircraftAt(ctx, state, state.player, sprites);
 
   for (const bullet of state.bullets) {
+    if (bullet.kind === "cannon") {
+      drawCannonTracer(ctx, state, bullet);
+      continue;
+    }
+
     const p = screenPoint(state, bullet.x, bullet.y);
     const angle = Math.atan2(bullet.vy, bullet.vx) + Math.PI / 2;
     ctx.save();
     ctx.translate(p.x, p.y);
     ctx.rotate(angle);
-    if (bullet.kind === "missile") {
-      const missileWidth = bullet.owner === "enemy" ? 8 : 11;
-      const missileHeight = bullet.owner === "enemy" ? 30 : 38;
-      const drewMissile = drawWeaponSprite(ctx, weaponSprites, bullet.blastRadius && bullet.blastRadius > 92 ? "heavyMissile" : "missile", missileWidth, missileHeight);
-      if (!drewMissile) {
-        ctx.fillStyle = "#e5e7eb";
-        ctx.beginPath();
-        ctx.moveTo(0, -missileHeight * 0.52);
-        ctx.lineTo(missileWidth * 0.28, -missileHeight * 0.32);
-        ctx.lineTo(missileWidth * 0.24, missileHeight * 0.32);
-        ctx.lineTo(-missileWidth * 0.24, missileHeight * 0.32);
-        ctx.lineTo(-missileWidth * 0.28, -missileHeight * 0.32);
-        ctx.closePath();
-        ctx.fill();
-      }
-      ctx.save();
-      ctx.globalCompositeOperation = "lighter";
-      ctx.globalAlpha = 0.36;
-      ctx.fillStyle = "rgba(251, 146, 60, 0.62)";
+    const missileWidth = bullet.owner === "enemy" ? 8 : 11;
+    const missileHeight = bullet.owner === "enemy" ? 30 : 38;
+    const drewMissile = drawWeaponSprite(ctx, weaponSprites, bullet.blastRadius && bullet.blastRadius > 92 ? "heavyMissile" : "missile", missileWidth, missileHeight);
+    if (!drewMissile) {
+      ctx.fillStyle = "#e5e7eb";
       ctx.beginPath();
-      ctx.moveTo(-1.2, missileHeight * 0.45);
-      ctx.quadraticCurveTo(-2.8, missileHeight * 0.58, 0, missileHeight * 0.72);
-      ctx.quadraticCurveTo(2.8, missileHeight * 0.58, 1.2, missileHeight * 0.45);
+      ctx.moveTo(0, -missileHeight * 0.52);
+      ctx.lineTo(missileWidth * 0.28, -missileHeight * 0.32);
+      ctx.lineTo(missileWidth * 0.24, missileHeight * 0.32);
+      ctx.lineTo(-missileWidth * 0.24, missileHeight * 0.32);
+      ctx.lineTo(-missileWidth * 0.28, -missileHeight * 0.32);
       ctx.closePath();
       ctx.fill();
-      ctx.restore();
-    } else {
-      const tracerWidth = bullet.owner === "enemy" ? 8 : 9;
-      const tracerHeight = bullet.owner === "enemy" ? 36 : 40;
-      const drewTracer = drawWeaponSprite(ctx, weaponSprites, bullet.owner === "enemy" ? "enemyTracer" : "playerTracer", tracerWidth, tracerHeight);
-      if (!drewTracer) {
-        ctx.fillStyle = bullet.owner === "enemy" ? "#fca5a5" : "#fff7ad";
-        drawRoundRect(ctx, -1.25, -bullet.length * 1.25, 2.5, bullet.length * 1.25, 1.4);
-        ctx.fill();
-      }
     }
+    ctx.save();
+    ctx.globalCompositeOperation = "lighter";
+    ctx.globalAlpha = 0.36;
+    ctx.fillStyle = "rgba(251, 146, 60, 0.62)";
+    ctx.beginPath();
+    ctx.moveTo(-1.2, missileHeight * 0.45);
+    ctx.quadraticCurveTo(-2.8, missileHeight * 0.58, 0, missileHeight * 0.72);
+    ctx.quadraticCurveTo(2.8, missileHeight * 0.58, 1.2, missileHeight * 0.45);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
     ctx.restore();
   }
 
@@ -2227,6 +2635,7 @@ export default function Home() {
   const spritesRef = useRef<HTMLImageElement | null>(null);
   const weaponSpritesRef = useRef<HTMLImageElement | null>(null);
   const terrainRef = useRef<HTMLImageElement | null>(null);
+  const airportRef = useRef<HTMLImageElement | null>(null);
   const animationRef = useRef<number | null>(null);
   const scaleRef = useRef({ x: 1, y: 1, dpr: 1 });
   const [phase, setPhase] = useState<GamePhase>("menu");
@@ -2287,10 +2696,17 @@ export default function Home() {
     terrainImage.onload = () => {
       terrainRef.current = terrainImage;
     };
+
+    const airportImage = new Image();
+    airportImage.src = AIRPORT_RUNWAY_URL;
+    airportImage.onload = () => {
+      airportRef.current = airportImage;
+    };
     return () => {
       aircraftImage.onload = null;
       weaponImage.onload = null;
       terrainImage.onload = null;
+      airportImage.onload = null;
     };
   }, []);
 
@@ -2312,9 +2728,20 @@ export default function Home() {
         state = createGameState(Math.max(readBestScore(), gameRef.current?.bestScore ?? 0), { ...defaultUpgrades }, "j8", mode, 1);
         addFloater(state, "关卡状态已重置", state.player.x, state.player.y - 90, "#bae6fd");
       }
-      state.phase = "running";
+      const speedStats = getSpeedStats(state.upgrades, state.selectedPlane);
+      state.phase = "takeoff";
+      state.player.x = 0;
+      state.player.y = 520;
+      state.player.angle = -Math.PI / 2;
+      state.player.speed = Math.max(92, speedStats.minSpeed * 0.55);
+      state.player.bank = 0;
+      state.player.throttle = 1;
+      state.player.invulnerable = Math.max(state.player.invulnerable ?? 0, state.takeoffDuration + 0.8);
+      positionWingmenForTakeoff(state);
+      state.takeoffTimer = 0;
+      state.spawnTimer = 0.85;
       gameRef.current = state;
-      setPhase("running");
+      setPhase("takeoff");
       setHud(snapshot(state));
     },
     [campaignStage, planeUpgrades, selectedPlane],
@@ -2490,7 +2917,7 @@ export default function Home() {
       if (context) {
         const { x, y, dpr } = scaleRef.current;
         context.setTransform(dpr * x, 0, 0, dpr * y, 0, 0);
-        drawGame(context, state, spritesRef.current, weaponSpritesRef.current, terrainRef.current);
+        drawGame(context, state, spritesRef.current, weaponSpritesRef.current, terrainRef.current, airportRef.current);
         context.setTransform(1, 0, 0, 1, 0, 0);
       }
 
@@ -2572,12 +2999,16 @@ export default function Home() {
   const fuelPercent = clamp(hud.fuel / Math.max(1, hud.maxFuel), 0, 1) * 100;
   const bossPercent = clamp(hud.bossHp / Math.max(1, hud.bossMaxHp), 0, 1) * 100;
   const showBattleUi = phase === "running" || phase === "paused" || phase === "playerDying";
-  const showPanel = phase !== "running" && phase !== "playerDying";
+  const showPanel = phase !== "running" && phase !== "takeoff" && phase !== "playerDying";
   const showMainMenu = phase === "menu";
   const showHangar = phase === "hangar";
   const showOver = phase === "over";
   const showStageClear = phase === "stageClear";
   const showPause = phase === "paused";
+  const hangarGroups: { faction: PlaneFaction; title: string; planes: PlaneMeta[] }[] = [
+    { faction: "china", title: "中国战斗机", planes: planeCatalog.filter((item) => item.faction === "china") },
+    { faction: "usa", title: "美国战斗机", planes: planeCatalog.filter((item) => item.faction === "usa") },
+  ];
 
   return (
     <main className="game-shell">
@@ -2695,7 +3126,7 @@ export default function Home() {
                     <span>当前战机</span>
                     <strong>{plane.label}</strong>
                     <em>
-                      血量 {getMaxHp(upgrades, selectedPlane)} / 燃油 {getMaxFuel(upgrades, selectedPlane)}
+                      {getFactionLabel(plane.faction)}阵营 · 血量 {getMaxHp(upgrades, selectedPlane)} / 燃油 {getMaxFuel(upgrades, selectedPlane)}
                     </em>
                   </div>
                   <div className="mode-actions">
@@ -2735,34 +3166,46 @@ export default function Home() {
                     </div>
                   </div>
                   <div className="plane-list" aria-label="选择战机">
-                    {planeCatalog.map((item) => {
-                      const unlocked = unlockedPlanes[item.id];
-                      const currentUpgrades = planeUpgrades[item.id] ?? defaultUpgrades;
-                      const active = selectedPlane === item.id;
-                      const unlockable = credits >= item.unlockCost;
-                      return (
-                        <button
-                          className={["plane-card", active ? "active" : "", unlocked ? "unlocked" : "locked"].filter(Boolean).join(" ")}
-                          type="button"
-                          key={item.id}
-                          onClick={() => (unlocked ? selectPlane(item.id) : unlockPlane(item.id))}
-                          disabled={!unlocked && !unlockable}
-                        >
-                          <div className={`plane-preview plane-${item.id}`} aria-hidden="true">
-                            <i />
-                          </div>
-                          <span>
-                            {item.label}
-                            <small>{item.role}</small>
-                          </span>
-                          <strong>
-                            {unlocked
-                              ? `血量 ${getMaxHp(currentUpgrades, item.id)} · 燃油 ${getMaxFuel(currentUpgrades, item.id)}`
-                              : `${unlockable ? "解锁" : "需要"} ${item.unlockCost} 战功`}
-                          </strong>
-                        </button>
-                      );
-                    })}
+                    {hangarGroups.map((group) => (
+                      <section className="faction-section" key={group.faction}>
+                        <div className="faction-title">
+                          <span>{group.title}</span>
+                          <small>
+                            出击时对阵{getFactionLabel(group.faction === "china" ? "usa" : "china")}机群
+                          </small>
+                        </div>
+                        <div className="plane-grid">
+                          {group.planes.map((item) => {
+                            const unlocked = unlockedPlanes[item.id];
+                            const currentUpgrades = planeUpgrades[item.id] ?? defaultUpgrades;
+                            const active = selectedPlane === item.id;
+                            const unlockable = credits >= item.unlockCost;
+                            return (
+                              <button
+                                className={["plane-card", active ? "active" : "", unlocked ? "unlocked" : "locked"].filter(Boolean).join(" ")}
+                                type="button"
+                                key={item.id}
+                                onClick={() => (unlocked ? selectPlane(item.id) : unlockPlane(item.id))}
+                                disabled={!unlocked && !unlockable}
+                              >
+                                <div className={`plane-preview plane-${item.id}`} aria-hidden="true">
+                                  <i />
+                                </div>
+                                <span>
+                                  {item.label}
+                                  <small>{item.role}</small>
+                                </span>
+                                <strong>
+                                  {unlocked
+                                    ? `血量 ${getMaxHp(currentUpgrades, item.id)} · 燃油 ${getMaxFuel(currentUpgrades, item.id)}`
+                                    : `${unlockable ? "解锁" : "需要"} ${item.unlockCost} 战功`}
+                                </strong>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </section>
+                    ))}
                   </div>
                   <div className="upgrade-list" aria-label="战机升级">
                     {upgradeCatalog.map((meta) => {

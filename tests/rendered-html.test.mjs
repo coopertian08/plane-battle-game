@@ -48,13 +48,17 @@ test("server-renders the plane battle game shell", async () => {
 });
 
 test("keeps the finished game free of starter preview code", async () => {
-  const [css, page, layout, sprites, weaponSprites, terrainTile] = await Promise.all([
+  const [css, page, layout, packageJson, exportScript, pagesWorkflow, sprites, weaponSprites, terrainTile, airportRunway] = await Promise.all([
     readFile(new URL("../app/globals.css", import.meta.url), "utf8"),
     readFile(new URL("../app/page.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/layout.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../package.json", import.meta.url), "utf8"),
+    readFile(new URL("../scripts/export-github-pages.mjs", import.meta.url), "utf8"),
+    readFile(new URL("../.github/workflows/pages.yml", import.meta.url), "utf8"),
     readFile(new URL("../public/aircraft-sprites.png", import.meta.url)),
     readFile(new URL("../public/weapon-sprites.png", import.meta.url)),
     readFile(new URL("../public/terrain-tile.png", import.meta.url)),
+    readFile(new URL("../public/airport-runway.png", import.meta.url)),
   ]);
 
   assert.match(page, /VIEW_WIDTH = 1280/);
@@ -62,10 +66,15 @@ test("keeps the finished game free of starter preview code", async () => {
   assert.ok(sprites.length > 100_000);
   assert.ok(weaponSprites.length > 50_000);
   assert.ok(terrainTile.length > 100_000);
-  assert.match(page, /AIRCRAFT_SPRITES_URL = "\/aircraft-sprites\.png"/);
-  assert.match(page, /WEAPON_SPRITES_URL = "\/weapon-sprites\.png"/);
-  assert.match(page, /TERRAIN_TILE_URL = "\/terrain-tile\.png"/);
-  assert.match(page, /type SpriteKey = PlaneId \| "enemy" \| "enemyHeavy" \| "tanker"/);
+  assert.ok(airportRunway.length > 100_000);
+  assert.match(page, /function publicAssetUrl/);
+  assert.match(page, /AIRCRAFT_SPRITES_URL = publicAssetUrl\("aircraft-sprites\.png"\)/);
+  assert.match(page, /WEAPON_SPRITES_URL = publicAssetUrl\("weapon-sprites\.png"\)/);
+  assert.match(page, /TERRAIN_TILE_URL = publicAssetUrl\("terrain-tile\.png"\)/);
+  assert.match(page, /AIRPORT_RUNWAY_URL = publicAssetUrl\("airport-runway\.png"\)/);
+  assert.match(page, /CHINA_PLANE_IDS = \["j8", "j10", "j15", "j20", "j35"\]/);
+  assert.match(page, /USA_PLANE_IDS = \["f16", "f18", "f15", "f22", "f35"\]/);
+  assert.match(page, /type SpriteKey = PlaneId \| "tanker"/);
   assert.match(page, /type WeaponSpriteKey/);
   assert.match(page, /spriteSlots/);
   assert.match(page, /weaponSpriteSlots/);
@@ -77,8 +86,10 @@ test("keeps the finished game free of starter preview code", async () => {
   assert.match(page, /weaponSpritesRef/);
   assert.match(page, /terrainRef/);
   assert.match(page, /joystick-zone/);
-  assert.match(page, /SPRITE_COLUMNS = 4/);
-  assert.match(page, /type PlaneId = "j8" \| "j10" \| "j15" \| "j20"/);
+  assert.match(page, /SPRITE_COLUMNS = 5/);
+  assert.match(page, /SPRITE_ROWS = 3/);
+  assert.match(page, /type PlaneId = \(typeof PLANE_IDS\)\[number\]/);
+  assert.match(page, /type PlaneFaction = "china" \| "usa"/);
   assert.match(page, /type GameMode = "endless" \| "stage"/);
   assert.match(page, /type UpgradeKey = "firepower" \| "missiles" \| "armor" \| "fuelTank" \| "engine" \| "speed" \| "tanker"/);
   assert.match(page, /type EnemyKind = "scout" \| "fighter" \| "heavy" \| "stealth" \| "tank" \| "boss"/);
@@ -90,10 +101,23 @@ test("keeps the finished game free of starter preview code", async () => {
   assert.match(page, /label:\s*"歼-10C"/);
   assert.match(page, /label:\s*"歼-15T"/);
   assert.match(page, /label:\s*"歼-20"/);
+  assert.match(page, /label:\s*"歼-35A"/);
+  assert.match(page, /label:\s*"F-16C"/);
+  assert.match(page, /label:\s*"F\/A-18E"/);
+  assert.match(page, /label:\s*"F-15EX"/);
+  assert.match(page, /label:\s*"F-22A"/);
+  assert.match(page, /label:\s*"F-35A"/);
   assert.match(page, /role:\s*"隐身空优"/);
+  assert.match(page, /faction:\s*"china"/);
+  assert.match(page, /faction:\s*"usa"/);
+  assert.match(page, /getOpponentFaction/);
+  assert.match(page, /getEnemyVariantForKind/);
   assert.match(page, /gunName:\s*"Type 23-III"/);
   assert.match(page, /gunName:\s*"GSh-23 \/ Type 23-3"/);
   assert.match(page, /gunName:\s*"GSh-30-1"/);
+  assert.match(page, /gunName:\s*"M61A1 Vulcan"/);
+  assert.match(page, /gunName:\s*"M61A2 Vulcan"/);
+  assert.match(page, /gunName:\s*"GAU-22\/A"/);
   assert.match(page, /gunBarrels:\s*2/);
   assert.match(page, /gunBarrels:\s*1/);
   assert.match(page, /gunMount:\s*"leftIntake"/);
@@ -101,6 +125,8 @@ test("keeps the finished game free of starter preview code", async () => {
   assert.match(page, /unlockCost:\s*760/);
   assert.match(page, /unlockCost:\s*1580/);
   assert.match(page, /unlockCost:\s*2800/);
+  assert.match(page, /unlockCost:\s*3800/);
+  assert.match(page, /unlockCost:\s*3650/);
   assert.match(page, /getMaxHp/);
   assert.match(page, /getMaxFuel/);
   assert.match(page, /getSpeedStats/);
@@ -150,9 +176,16 @@ test("keeps the finished game free of starter preview code", async () => {
   assert.match(page, /throttle/);
   assert.match(page, /turn/);
   assert.match(page, /drawSky/);
+  assert.match(page, /drawTakeoffAirfield/);
+  assert.match(page, /drawCloudCluster/);
+  assert.match(page, /TAKEOFF_RUNWAY_WORLD_WIDTH = 4600/);
+  assert.match(page, /drawMirroredTerrainTile/);
+  assert.match(page, /drawTerrainHaze/);
+  assert.match(page, /isOddTile/);
   assert.match(page, /seededNoise/);
   assert.match(page, /screenPoint/);
   assert.match(page, /terrain\.naturalWidth/);
+  assert.match(page, /airportRef/);
   assert.match(page, /radarBlips/);
   assert.match(page, /\.filter\(\(enemy\) => !isStealthEnemy\(enemy\)\)/);
   assert.match(page, /function isStealthEnemy/);
@@ -169,6 +202,8 @@ test("keeps the finished game free of starter preview code", async () => {
   assert.match(page, /enemy\.spawnWarmup = randomBetween\(1\.15, 1\.9\)/);
   assert.match(page, /const warmingUp = \(enemy\.spawnWarmup \?\? 0\) > 0/);
   assert.match(page, /updateAllies/);
+  assert.match(page, /getTakeoffFormationPoint/);
+  assert.match(page, /positionWingmenForTakeoff/);
   assert.match(page, /fireGuns/);
   assert.match(page, /type Wreck/);
   assert.match(page, /wrecks/);
@@ -180,6 +215,7 @@ test("keeps the finished game free of starter preview code", async () => {
   assert.match(page, /showBattleUi/);
   assert.match(page, /drawEngineFlamesAt/);
   assert.match(page, /localToVisualWorld/);
+  assert.match(page, /return localToWorld\(aircraft, localX, localY \* \(1 - cobraPitch \* 0\.12\)\)/);
   assert.match(page, /const base = localToVisualWorld\(aircraft, port\.x, port\.y\)/);
   assert.match(page, /const forward = direction\(aircraft\.angle\)/);
   assert.match(page, /const back = \{ x: -forward\.x, y: -forward\.y \}/);
@@ -208,13 +244,32 @@ test("keeps the finished game free of starter preview code", async () => {
   assert.match(page, /saveCampaignStage/);
   assert.match(page, /bossHp/);
   assert.match(page, /bossMaxHp/);
-  assert.match(page, /tracerWidth = bullet\.owner === "enemy" \? 8 : 9/);
-  assert.match(page, /tracerHeight = bullet\.owner === "enemy" \? 36 : 40/);
+  assert.match(page, /type GamePhase = "menu" \| "hangar" \| "takeoff"/);
+  assert.match(page, /updateTakeoff/);
+  assert.match(page, /state\.phase = "takeoff"/);
+  assert.match(page, /state\.phase = "running"/);
+  assert.match(page, /getVisualLaunchAngle/);
+  assert.doesNotMatch(page, /drawAircraftRollDepth/);
+  assert.match(page, /ctx\.scale\(1 - Math\.abs\(bank\) \* 0\.055/);
+  assert.match(page, /const noseY = -size \* 0\.43/);
+  assert.match(page, /const origin = localToWorld\(aircraft, port\.x, port\.y\)/);
+  assert.match(page, /const launchAngle = normalizeAngle\(aircraft\.angle \+ port\.angle\)/);
+  assert.match(page, /const muzzleOffset = owner === "enemy" \? 1\.8 : 2/);
+  assert.match(page, /drawCannonTracer/);
+  assert.match(page, /tracerLength = bullet\.owner === "enemy" \? 11 : 12\.5/);
+  assert.match(page, /rgba\(239, 68, 68, 0\.34\)/);
+  assert.match(page, /rgba\(248, 113, 113, 0\.95\)/);
+  assert.match(page, /updateAircraftCollisions/);
+  assert.match(page, /collisionCooldown/);
+  assert.match(page, /trailPoint/);
   assert.match(page, /readPlaneUpgrades/);
   assert.match(page, /savePlaneUpgrades/);
   assert.match(page, /readUnlockedPlanes/);
   assert.match(page, /saveUnlockedPlanes/);
   assert.match(page, /unlockPlane/);
+  assert.match(page, /hangarGroups/);
+  assert.match(page, /中国战斗机/);
+  assert.match(page, /美国战斗机/);
   assert.doesNotMatch(page, /<aside/);
   assert.doesNotMatch(page, /cockpit-panel/);
   assert.doesNotMatch(page, /ctx\.arc\(bullet/);
@@ -239,14 +294,29 @@ test("keeps the finished game free of starter preview code", async () => {
   assert.match(css, /fuel-meter/);
   assert.match(css, /joystick-zone/);
   assert.match(css, /plane-preview/);
-  assert.match(css, /url\("\/aircraft-sprites\.png"\)/);
-  assert.match(css, /background-size:\s*400% 200%/);
+  assert.match(css, /url\("\.\.\/aircraft-sprites\.png"\)/);
+  assert.match(css, /background-size:\s*500% 300%/);
   assert.match(css, /plane-j8/);
   assert.match(css, /plane-j10/);
   assert.match(css, /plane-j15/);
   assert.match(css, /plane-j20/);
+  assert.match(css, /plane-j35/);
+  assert.match(css, /plane-f16/);
+  assert.match(css, /plane-f18/);
+  assert.match(css, /plane-f15/);
+  assert.match(css, /plane-f22/);
+  assert.match(css, /plane-f35/);
   assert.match(css, /plane-list/);
+  assert.match(css, /plane-grid/);
+  assert.match(css, /faction-section/);
   assert.match(css, /upgrade-list/);
   assert.match(css, /plane-card\.locked/);
+  assert.match(packageJson, /"export:github-pages": "node scripts\/export-github-pages\.mjs"/);
+  assert.match(exportScript, /dist", "github-pages"/);
+  assert.match(exportScript, /GITHUB_REPOSITORY/);
+  assert.match(exportScript, /prefixRootAssetPaths/);
+  assert.match(exportScript, /writeFile\(resolve\(outDir, "index\.html"\)/);
+  assert.match(pagesWorkflow, /Deploy GitHub Pages/);
+  assert.match(pagesWorkflow, /actions\/deploy-pages@v4/);
   assert.doesNotMatch(page + layout + css, /SkeletonPreview|codex-preview|Building your site/);
 });
