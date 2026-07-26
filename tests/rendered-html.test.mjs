@@ -85,6 +85,13 @@ test("keeps the finished game free of starter preview code", async () => {
   assert.match(page, /const drawWidth = size \* \(cellWidth \/ cellHeight\)/);
   assert.match(page, /drawWeaponSprite/);
   assert.match(page, /drawEngineFlame/);
+  assert.match(page, /type EnginePort/);
+  assert.match(page, /singleEnginePorts/);
+  assert.match(page, /twinEnginePorts/);
+  assert.match(page, /j11:\s*\[/);
+  assert.match(page, /j16:\s*\[/);
+  assert.match(page, /f14:\s*\[/);
+  assert.match(page, /f22:\s*\[/);
   assert.match(page, /getAircraftDrawSize/);
   assert.match(page, /spritesRef/);
   assert.match(page, /weaponSpritesRef/);
@@ -253,6 +260,8 @@ test("keeps the finished game free of starter preview code", async () => {
   assert.match(page, /localToVisualWorld/);
   assert.match(page, /return localToWorld\(aircraft, localX, localY \* \(1 - cobraPitch \* 0\.12\)\)/);
   assert.match(page, /const base = localToVisualWorld\(aircraft, port\.x, port\.y\)/);
+  assert.match(page, /const length = size \* \(0\.14 \+ thrust \* 0\.22\) \* \(port\.lengthScale \?\? 1\)/);
+  assert.match(page, /const width = size \* \(0\.036 \+ thrust \* 0\.022\) \* \(port\.widthScale \?\? 1\)/);
   assert.match(page, /const forward = direction\(aircraft\.angle\)/);
   assert.match(page, /const back = \{ x: -forward\.x, y: -forward\.y \}/);
   assert.match(page, /createLinearGradient\(baseScreen\.x, baseScreen\.y, tipScreen\.x, tipScreen\.y\)/);

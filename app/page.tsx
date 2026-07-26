@@ -51,6 +51,12 @@ type PlaneUpgradeState = Record<PlaneId, UpgradeState>;
 type PlaneUnlockState = Record<PlaneId, boolean>;
 type UpgradeBlueprintState = Record<UpgradeKey, number>;
 type PlaneBlueprintState = Record<PlaneId, number>;
+type EnginePort = {
+  x: number;
+  y: number;
+  widthScale?: number;
+  lengthScale?: number;
+};
 
 type InventoryState = {
   materials: number;
@@ -2669,56 +2675,110 @@ function drawWeaponSprite(ctx: CanvasRenderingContext2D, sprites: HTMLImageEleme
   return true;
 }
 
-function getEnginePorts(aircraft: Aircraft) {
+const singleEnginePorts: Partial<Record<PlaneId, EnginePort[]>> = {
+  j10: [{ x: 0, y: 0.37, widthScale: 0.78, lengthScale: 0.94 }],
+  f16: [{ x: 0, y: 0.265, widthScale: 0.78, lengthScale: 0.94 }],
+  f35: [{ x: 0, y: 0.235, widthScale: 0.78, lengthScale: 0.94 }],
+};
+
+const twinEnginePorts: Partial<Record<PlaneId, EnginePort[]>> = {
+  j8: [
+    { x: -0.026, y: 0.42 },
+    { x: 0.026, y: 0.42 },
+  ],
+  j11: [
+    { x: -0.055, y: 0.37 },
+    { x: 0.055, y: 0.37 },
+  ],
+  j15: [
+    { x: -0.048, y: 0.365 },
+    { x: 0.048, y: 0.365 },
+  ],
+  j16: [
+    { x: -0.055, y: 0.385 },
+    { x: 0.055, y: 0.385 },
+  ],
+  j20: [
+    { x: -0.05, y: 0.395 },
+    { x: 0.05, y: 0.395 },
+  ],
+  j35: [
+    { x: -0.044, y: 0.39 },
+    { x: 0.044, y: 0.39 },
+  ],
+  f18: [
+    { x: -0.046, y: 0.235 },
+    { x: 0.046, y: 0.235 },
+  ],
+  f14: [
+    { x: -0.055, y: 0.205 },
+    { x: 0.055, y: 0.205 },
+  ],
+  f15: [
+    { x: -0.054, y: 0.265 },
+    { x: 0.054, y: 0.265 },
+  ],
+  f117: [
+    { x: -0.046, y: 0.19, widthScale: 0.5, lengthScale: 0.82 },
+    { x: 0.046, y: 0.19, widthScale: 0.5, lengthScale: 0.82 },
+  ],
+  f22: [
+    { x: -0.052, y: 0.255 },
+    { x: 0.052, y: 0.255 },
+  ],
+};
+
+function scaleEnginePorts(size: number, ports: EnginePort[]) {
+  return ports.map((port) => ({
+    ...port,
+    x: port.x * size,
+    y: port.y * size,
+    widthScale: port.widthScale ?? 0.58,
+    lengthScale: port.lengthScale ?? 0.92,
+  }));
+}
+
+function getEnginePorts(aircraft: Aircraft): EnginePort[] {
   const size = getAircraftDrawSize(aircraft);
   const spriteKind = aircraft.variant ?? aircraft.kind;
-  if (spriteKind === "j8" || spriteKind === "j10" || spriteKind === "j35" || spriteKind === "f16" || spriteKind === "f35") {
-    return [{ x: 0, y: size * 0.39 }];
+  if (isPlaneId(spriteKind) && singleEnginePorts[spriteKind]) {
+    return scaleEnginePorts(size, singleEnginePorts[spriteKind]);
   }
-  if (spriteKind === "j15" || spriteKind === "f18" || spriteKind === "f15") {
+  if (isPlaneId(spriteKind) && twinEnginePorts[spriteKind]) {
+    return scaleEnginePorts(size, twinEnginePorts[spriteKind]);
+  }
+  if (aircraft.kind === "boss" || aircraft.kind === "tank" || aircraft.kind === "heavy" || aircraft.kind === "stealth") {
     return [
-      { x: -size * 0.09, y: size * 0.36 },
-      { x: size * 0.09, y: size * 0.36 },
+      { x: -size * 0.052, y: size * 0.29, widthScale: 0.56, lengthScale: 0.9 },
+      { x: size * 0.052, y: size * 0.29, widthScale: 0.56, lengthScale: 0.9 },
     ];
   }
-  if (spriteKind === "j20" || spriteKind === "f22" || aircraft.kind === "stealth") {
-    return [
-      { x: -size * 0.07, y: size * 0.39 },
-      { x: size * 0.07, y: size * 0.39 },
-    ];
-  }
-  if (aircraft.kind === "boss" || aircraft.kind === "tank" || aircraft.kind === "heavy") {
-    return [
-      { x: -size * 0.08, y: size * 0.31 },
-      { x: size * 0.08, y: size * 0.31 },
-    ];
-  }
-  return [{ x: 0, y: size * 0.315 }];
+  return [{ x: 0, y: size * 0.315, widthScale: 0.76, lengthScale: 0.92 }];
 }
 
 function drawEngineFlame(
   ctx: CanvasRenderingContext2D,
   state: GameState,
   aircraft: Aircraft,
-  port: { x: number; y: number },
+  port: EnginePort,
   size: number,
   cobraPitch: number,
   spawnAlpha: number,
 ) {
   const throttle = aircraft.throttle ?? 0;
   const thrust = clamp(0.28 + Math.max(0, throttle) * 0.72 + cobraPitch * 0.62, 0.14, 1.25);
-  const length = size * (0.14 + thrust * 0.22);
-  const width = size * (0.045 + thrust * 0.03);
+  const length = size * (0.14 + thrust * 0.22) * (port.lengthScale ?? 1);
+  const width = size * (0.036 + thrust * 0.022) * (port.widthScale ?? 1);
   const forward = direction(aircraft.angle);
   const back = { x: -forward.x, y: -forward.y };
   const perp = { x: -forward.y, y: forward.x };
   const base = localToVisualWorld(aircraft, port.x, port.y);
   const baseScreen = screenPoint(state, base.x, base.y);
   const tipScreen = screenPoint(state, base.x + back.x * length, base.y + back.y * length);
-  const leftBase = screenPoint(state, base.x + perp.x * width * 0.36, base.y + perp.y * width * 0.36);
-  const rightBase = screenPoint(state, base.x - perp.x * width * 0.36, base.y - perp.y * width * 0.36);
-  const leftMid = screenPoint(state, base.x + back.x * length * 0.58 + perp.x * width, base.y + back.y * length * 0.58 + perp.y * width);
-  const rightMid = screenPoint(state, base.x + back.x * length * 0.58 - perp.x * width, base.y + back.y * length * 0.58 - perp.y * width);
+  const leftBase = screenPoint(state, base.x + perp.x * width * 0.3, base.y + perp.y * width * 0.3);
+  const rightBase = screenPoint(state, base.x - perp.x * width * 0.3, base.y - perp.y * width * 0.3);
+  const leftMid = screenPoint(state, base.x + back.x * length * 0.58 + perp.x * width * 0.74, base.y + back.y * length * 0.58 + perp.y * width * 0.74);
+  const rightMid = screenPoint(state, base.x + back.x * length * 0.58 - perp.x * width * 0.74, base.y + back.y * length * 0.58 - perp.y * width * 0.74);
   const coreLeftBase = screenPoint(state, base.x + perp.x * width * 0.16, base.y + perp.y * width * 0.16);
   const coreRightBase = screenPoint(state, base.x - perp.x * width * 0.16, base.y - perp.y * width * 0.16);
   const coreTip = screenPoint(state, base.x + back.x * length * 0.58, base.y + back.y * length * 0.58);
