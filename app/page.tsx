@@ -20,14 +20,16 @@ const TERRAIN_TILE_SIZE = 1600;
 const TAKEOFF_RUNWAY_WORLD_WIDTH = 4600;
 const SPRITE_COLUMNS = 5;
 const SPRITE_ROWS = 3;
-const CHINA_PLANE_IDS = ["j8", "j10", "j15", "j20", "j35"] as const;
-const USA_PLANE_IDS = ["f16", "f18", "f15", "f22", "f35"] as const;
+const CHINA_PLANE_IDS = ["j8", "j10", "j11", "j15", "j16", "j20", "j35"] as const;
+const USA_PLANE_IDS = ["f16", "f18", "f14", "f15", "f117", "f22", "f35"] as const;
 const PLANE_IDS = [...CHINA_PLANE_IDS, ...USA_PLANE_IDS] as const;
 const WEAPON_COLUMNS = 3;
 const WEAPON_ROWS = 2;
 const BEST_SCORE_KEY = "plane-battle-best-score";
 const CREDITS_KEY = "plane-battle-credits";
 const UPGRADES_KEY = "plane-battle-upgrades";
+const INVENTORY_KEY = "plane-battle-inventory";
+const DAILY_CHECKIN_KEY = "plane-battle-daily-checkin";
 const PLANE_KEY = "plane-battle-selected-plane";
 const UNLOCKED_PLANES_KEY = "plane-battle-unlocked-planes";
 const CAMPAIGN_STAGE_KEY = "plane-battle-campaign-stage";
@@ -41,10 +43,31 @@ type EnemyKind = "scout" | "fighter" | "heavy" | "stealth" | "tank" | "boss";
 type ProjectileOwner = "player" | "ally" | "enemy";
 type SpriteKey = PlaneId | "tanker";
 type WeaponSpriteKey = "playerTracer" | "enemyTracer" | "missile" | "heavyMissile" | "blast" | "smoke";
+type ShopPackId = "starter" | "arsenal" | "elite";
 
 type UpgradeState = Record<UpgradeKey, number>;
 type PlaneUpgradeState = Record<PlaneId, UpgradeState>;
 type PlaneUnlockState = Record<PlaneId, boolean>;
+type UpgradeBlueprintState = Record<UpgradeKey, number>;
+
+type InventoryState = {
+  materials: number;
+  planeBlueprints: number;
+  upgradeBlueprints: UpgradeBlueprintState;
+};
+
+type DailyCheckinState = {
+  lastDate: string;
+  streak: number;
+};
+
+type InventoryReward = {
+  credits?: number;
+  materials?: number;
+  planeBlueprints?: number;
+  upgradeBlueprints?: Partial<UpgradeBlueprintState>;
+  giftPlane?: PlaneId;
+};
 
 type PlaneMeta = {
   id: PlaneId;
@@ -279,15 +302,40 @@ const defaultUpgrades: UpgradeState = {
   tanker: 0,
 };
 
+const defaultUpgradeBlueprints: UpgradeBlueprintState = {
+  firepower: 0,
+  missiles: 0,
+  armor: 0,
+  fuelTank: 0,
+  engine: 0,
+  speed: 0,
+  tanker: 0,
+};
+
+const defaultInventory: InventoryState = {
+  materials: 0,
+  planeBlueprints: 0,
+  upgradeBlueprints: { ...defaultUpgradeBlueprints },
+};
+
+const defaultDailyCheckin: DailyCheckinState = {
+  lastDate: "",
+  streak: 0,
+};
+
 const defaultUnlockedPlanes: PlaneUnlockState = {
   j8: true,
   j10: false,
+  j11: false,
   j15: false,
+  j16: false,
   j20: false,
   j35: false,
   f16: true,
   f18: false,
+  f14: false,
   f15: false,
+  f117: false,
   f22: false,
   f35: false,
 };
@@ -357,6 +405,24 @@ const planeCatalog: PlaneMeta[] = [
     damageBonus: 0.16,
   },
   {
+    id: "j11",
+    faction: "china",
+    label: "歼-11B",
+    role: "重型空优",
+    gunName: "GSh-30-1",
+    gunCaliber: 30,
+    gunBarrels: 1,
+    gunMount: "rightRoot",
+    unlockCost: 1180,
+    baseHp: 270,
+    minSpeed: 168,
+    cruiseSpeed: 286,
+    maxSpeed: 452,
+    turnRate: 1.82,
+    fuel: 308,
+    damageBonus: 0.22,
+  },
+  {
     id: "j15",
     faction: "china",
     label: "歼-15T",
@@ -373,6 +439,24 @@ const planeCatalog: PlaneMeta[] = [
     turnRate: 1.74,
     fuel: 330,
     damageBonus: 0.3,
+  },
+  {
+    id: "j16",
+    faction: "china",
+    label: "歼-16",
+    role: "重型多用途",
+    gunName: "GSh-30-1",
+    gunCaliber: 30,
+    gunBarrels: 1,
+    gunMount: "rightRoot",
+    unlockCost: 2200,
+    baseHp: 326,
+    minSpeed: 172,
+    cruiseSpeed: 296,
+    maxSpeed: 470,
+    turnRate: 1.88,
+    fuel: 352,
+    damageBonus: 0.37,
   },
   {
     id: "j20",
@@ -447,6 +531,24 @@ const planeCatalog: PlaneMeta[] = [
     damageBonus: 0.14,
   },
   {
+    id: "f14",
+    faction: "usa",
+    label: "F-14D",
+    role: "远程截击",
+    gunName: "M61A1 Vulcan",
+    gunCaliber: 20,
+    gunBarrels: 1,
+    gunMount: "belly",
+    unlockCost: 1180,
+    baseHp: 268,
+    minSpeed: 166,
+    cruiseSpeed: 276,
+    maxSpeed: 462,
+    turnRate: 1.72,
+    fuel: 318,
+    damageBonus: 0.2,
+  },
+  {
     id: "f15",
     faction: "usa",
     label: "F-15EX",
@@ -463,6 +565,24 @@ const planeCatalog: PlaneMeta[] = [
     turnRate: 1.82,
     fuel: 338,
     damageBonus: 0.28,
+  },
+  {
+    id: "f117",
+    faction: "usa",
+    label: "F-117A",
+    role: "隐身突击",
+    gunName: "内部武器舱",
+    gunCaliber: 25,
+    gunBarrels: 1,
+    gunMount: "belly",
+    unlockCost: 2250,
+    baseHp: 318,
+    minSpeed: 160,
+    cruiseSpeed: 260,
+    maxSpeed: 405,
+    turnRate: 1.58,
+    fuel: 348,
+    damageBonus: 0.36,
   },
   {
     id: "f22",
@@ -554,7 +674,33 @@ const upgradeCatalog: UpgradeMeta[] = [
   },
 ];
 
-const spriteSlots: Record<SpriteKey, { col: number; row: number }> = {
+const upgradeBlueprintLabels: Record<UpgradeKey, string> = {
+  firepower: "机炮升级蓝图",
+  missiles: "导弹挂架蓝图",
+  armor: "机体结构蓝图",
+  fuelTank: "副油箱蓝图",
+  engine: "发动机升级蓝图",
+  speed: "速度升级蓝图",
+  tanker: "支援系统蓝图",
+};
+
+const dailyRewards: InventoryReward[] = [
+  { credits: 120 },
+  { credits: 160, materials: 6 },
+  { credits: 210, materials: 8 },
+  { credits: 260, planeBlueprints: 1 },
+  { credits: 320, materials: 14 },
+  { credits: 420, upgradeBlueprints: { engine: 1, firepower: 1, missiles: 1 } },
+  { credits: 520 },
+];
+
+const shopPacks: { id: ShopPackId; label: string; description: string; cost: number; rolls: number; rareBias: number }[] = [
+  { id: "starter", label: "基础补给箱", description: "适合前期攒材料和少量蓝图。", cost: 220, rolls: 2, rareBias: 0 },
+  { id: "arsenal", label: "军械礼包", description: "更容易开出升级蓝图和飞机蓝图。", cost: 620, rolls: 4, rareBias: 0.12 },
+  { id: "elite", label: "王牌蓝图箱", description: "高概率获得飞机蓝图和高级升级蓝图。", cost: 1180, rolls: 5, rareBias: 0.24 },
+];
+
+const spriteSlots: Partial<Record<SpriteKey, { col: number; row: number }>> = {
   j8: { col: 0, row: 0 },
   j10: { col: 1, row: 0 },
   j15: { col: 2, row: 0 },
@@ -576,6 +722,10 @@ const weaponSpriteSlots: Record<WeaponSpriteKey, WeaponSpriteSlot> = {
   blast: { col: 1, row: 1, crop: [95, 186, 213, 202] },
   smoke: { col: 2, row: 1, crop: [29, 136, 289, 290] },
 };
+
+function getPlanePreviewClass(planeId: PlaneId) {
+  return ["plane-preview", `plane-${planeId}`, spriteSlots[planeId] ? "" : "plane-generated"].filter(Boolean).join(" ");
+}
 
 function clamp(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value));
@@ -685,6 +835,53 @@ function saveCredits(credits: number) {
   }
 }
 
+function sanitizeInventory(value?: Partial<InventoryState> & Record<string, unknown>): InventoryState {
+  const parsedBlueprints = (value?.upgradeBlueprints ?? {}) as Partial<UpgradeBlueprintState> & Record<string, unknown>;
+  const upgradeBlueprints = { ...defaultUpgradeBlueprints };
+  for (const meta of upgradeCatalog) {
+    upgradeBlueprints[meta.key] = Math.max(0, Math.floor(Number(parsedBlueprints[meta.key]) || 0));
+  }
+  return {
+    materials: Math.max(0, Math.floor(Number(value?.materials) || 0)),
+    planeBlueprints: Math.max(0, Math.floor(Number(value?.planeBlueprints) || 0)),
+    upgradeBlueprints,
+  };
+}
+
+function readInventory(): InventoryState {
+  if (typeof window === "undefined") return { ...defaultInventory, upgradeBlueprints: { ...defaultUpgradeBlueprints } };
+  try {
+    return sanitizeInventory(JSON.parse(window.localStorage.getItem(INVENTORY_KEY) ?? "{}") as Record<string, unknown>);
+  } catch {
+    return { ...defaultInventory, upgradeBlueprints: { ...defaultUpgradeBlueprints } };
+  }
+}
+
+function saveInventory(inventory: InventoryState) {
+  if (typeof window !== "undefined") {
+    window.localStorage.setItem(INVENTORY_KEY, JSON.stringify(sanitizeInventory(inventory)));
+  }
+}
+
+function readDailyCheckin(): DailyCheckinState {
+  if (typeof window === "undefined") return { ...defaultDailyCheckin };
+  try {
+    const parsed = JSON.parse(window.localStorage.getItem(DAILY_CHECKIN_KEY) ?? "{}") as Record<string, unknown>;
+    return {
+      lastDate: typeof parsed.lastDate === "string" ? parsed.lastDate : "",
+      streak: clamp(Math.floor(Number(parsed.streak) || 0), 0, 7),
+    };
+  } catch {
+    return { ...defaultDailyCheckin };
+  }
+}
+
+function saveDailyCheckin(daily: DailyCheckinState) {
+  if (typeof window !== "undefined") {
+    window.localStorage.setItem(DAILY_CHECKIN_KEY, JSON.stringify(daily));
+  }
+}
+
 function readCampaignStage() {
   if (typeof window === "undefined") return 1;
   const stored = Number(window.localStorage.getItem(CAMPAIGN_STAGE_KEY));
@@ -773,6 +970,138 @@ function saveSelectedPlane(planeId: PlaneId) {
 
 function getUpgradeCost(meta: UpgradeMeta, level: number) {
   return Math.round(meta.baseCost * (1 + level * 0.68));
+}
+
+function getTodayKey() {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+}
+
+function getDateValue(dateKey: string) {
+  const [year, month, day] = dateKey.split("-").map(Number);
+  if (!year || !month || !day) return Number.NaN;
+  return Math.floor(new Date(year, month - 1, day).getTime() / 86400000);
+}
+
+function getNextDailyDay(daily: DailyCheckinState) {
+  const today = getTodayKey();
+  if (daily.lastDate === today) return clamp(daily.streak, 1, 7);
+  const gap = getDateValue(today) - getDateValue(daily.lastDate);
+  if (gap === 1) return (daily.streak % 7) + 1;
+  return 1;
+}
+
+function canClaimDaily(daily: DailyCheckinState) {
+  return daily.lastDate !== getTodayKey();
+}
+
+function addRewardToInventory(inventory: InventoryState, reward: InventoryReward) {
+  const next: InventoryState = {
+    materials: inventory.materials + Math.max(0, Math.floor(reward.materials ?? 0)),
+    planeBlueprints: inventory.planeBlueprints + Math.max(0, Math.floor(reward.planeBlueprints ?? 0)),
+    upgradeBlueprints: { ...inventory.upgradeBlueprints },
+  };
+  for (const meta of upgradeCatalog) {
+    next.upgradeBlueprints[meta.key] += Math.max(0, Math.floor(reward.upgradeBlueprints?.[meta.key] ?? 0));
+  }
+  return next;
+}
+
+function getUpgradeRequirement(meta: UpgradeMeta, level: number) {
+  return {
+    credits: getUpgradeCost(meta, level),
+    materials: level >= 2 ? 8 + (level - 2) * 6 : 0,
+    blueprintKey: level >= 3 ? meta.key : null,
+    blueprints: level >= 3 ? level - 2 : 0,
+  };
+}
+
+function getPlaneUnlockRequirement(planeId: PlaneId) {
+  const plane = getPlaneMeta(planeId);
+  const tier = getPlaneTier(planeId);
+  return {
+    credits: plane.unlockCost,
+    materials: tier >= 2 ? 10 + Math.max(0, tier - 2) * 14 : 0,
+    planeBlueprints: tier === 0 ? 0 : tier + 1,
+  };
+}
+
+function formatRequirement(parts: string[]) {
+  return parts.filter(Boolean).join(" · ");
+}
+
+function formatUpgradeRequirement(meta: UpgradeMeta, level: number) {
+  if (level >= meta.max) return "已满级";
+  const requirement = getUpgradeRequirement(meta, level);
+  return formatRequirement([
+    `${requirement.credits} 战功`,
+    requirement.materials > 0 ? `${requirement.materials} 材料` : "",
+    requirement.blueprintKey && requirement.blueprints > 0 ? `${requirement.blueprints} ${upgradeBlueprintLabels[requirement.blueprintKey]}` : "",
+  ]);
+}
+
+function formatPlaneRequirement(planeId: PlaneId) {
+  const requirement = getPlaneUnlockRequirement(planeId);
+  return formatRequirement([
+    requirement.credits > 0 ? `${requirement.credits} 战功` : "",
+    requirement.materials > 0 ? `${requirement.materials} 材料` : "",
+    requirement.planeBlueprints > 0 ? `${requirement.planeBlueprints} 飞机蓝图` : "",
+  ]) || "已拥有";
+}
+
+function canAffordUpgrade(meta: UpgradeMeta, level: number, credits: number, inventory: InventoryState) {
+  const requirement = getUpgradeRequirement(meta, level);
+  return (
+    credits >= requirement.credits &&
+    inventory.materials >= requirement.materials &&
+    (!requirement.blueprintKey || inventory.upgradeBlueprints[requirement.blueprintKey] >= requirement.blueprints)
+  );
+}
+
+function canAffordPlane(planeId: PlaneId, credits: number, inventory: InventoryState) {
+  const requirement = getPlaneUnlockRequirement(planeId);
+  return credits >= requirement.credits && inventory.materials >= requirement.materials && inventory.planeBlueprints >= requirement.planeBlueprints;
+}
+
+function getGiftPlane(unlocked: PlaneUnlockState, selectedPlane: PlaneId) {
+  const selectedFaction = getPlaneMeta(selectedPlane).faction;
+  return (
+    getPlaneIdsByFaction(selectedFaction).find((planeId) => !unlocked[planeId]) ??
+    PLANE_IDS.find((planeId) => !unlocked[planeId]) ??
+    null
+  );
+}
+
+function rollShopPack(pack: { rolls: number; rareBias: number }): InventoryReward {
+  const reward: InventoryReward = { credits: 0, materials: 0, planeBlueprints: 0, upgradeBlueprints: {} };
+  for (let index = 0; index < pack.rolls; index += 1) {
+    const roll = Math.random() + pack.rareBias;
+    if (roll < 0.26) {
+      reward.credits = (reward.credits ?? 0) + Math.round(randomBetween(80, 180) * (1 + pack.rareBias));
+    } else if (roll < 0.58) {
+      reward.materials = (reward.materials ?? 0) + Math.round(randomBetween(5, 13) * (1 + pack.rareBias));
+    } else if (roll < 0.9) {
+      const key = upgradeCatalog[Math.floor(Math.random() * upgradeCatalog.length)].key;
+      reward.upgradeBlueprints = { ...reward.upgradeBlueprints, [key]: (reward.upgradeBlueprints?.[key] ?? 0) + 1 };
+    } else {
+      reward.planeBlueprints = (reward.planeBlueprints ?? 0) + 1;
+    }
+  }
+  return reward;
+}
+
+function formatReward(reward: InventoryReward) {
+  const parts = [
+    reward.credits ? `${reward.credits} 战功` : "",
+    reward.materials ? `${reward.materials} 材料` : "",
+    reward.planeBlueprints ? `${reward.planeBlueprints} 飞机蓝图` : "",
+    reward.giftPlane ? `解锁 ${getPlaneMeta(reward.giftPlane).label}` : "",
+  ];
+  for (const meta of upgradeCatalog) {
+    const amount = reward.upgradeBlueprints?.[meta.key] ?? 0;
+    if (amount > 0) parts.push(`${amount} ${upgradeBlueprintLabels[meta.key]}`);
+  }
+  return parts.filter(Boolean).join("、") || "补给已领取";
 }
 
 function getStageReward(stage: number) {
@@ -1467,10 +1796,11 @@ function chooseMissileTarget(state: GameState, shooter: Vector & { angle: number
 
 function getEnemyVariantForKind(state: GameState, kind: EnemyKind, seed = 0): PlaneId {
   const opponentIds = getPlaneIdsByFaction(getOpponentFaction(state.selectedPlane));
-  if (kind === "boss") return opponentIds[4] ?? opponentIds[3] ?? opponentIds[0];
-  if (kind === "stealth") return opponentIds[3 + (seed % 2)] ?? opponentIds[3] ?? opponentIds[0];
-  if (kind === "tank" || kind === "heavy") return opponentIds[2] ?? opponentIds[0];
-  if (kind === "fighter") return opponentIds[1] ?? opponentIds[0];
+  const last = opponentIds.length - 1;
+  if (kind === "boss") return opponentIds[last] ?? opponentIds[0];
+  if (kind === "stealth") return opponentIds[Math.max(0, last - (seed % 2))] ?? opponentIds[0];
+  if (kind === "tank" || kind === "heavy") return opponentIds[Math.min(3, last)] ?? opponentIds[0];
+  if (kind === "fighter") return opponentIds[Math.min(1 + (seed % 2), last)] ?? opponentIds[0];
   return opponentIds[0];
 }
 
@@ -1619,7 +1949,7 @@ function updateAircraftCollisions(state: GameState, dt: number) {
     for (let j = i + 1; j < aircraft.length; j += 1) {
       const b = aircraft[j];
       if (!isAircraftActive(state, b)) continue;
-      if (a.side === "enemy" && b.side === "enemy") continue;
+      if ((a.side === "enemy") === (b.side === "enemy")) continue;
       const minimum = a.radius + b.radius + 12;
       const dist = distance(a, b);
       if (dist >= minimum) continue;
@@ -2249,15 +2579,18 @@ function getAircraftDrawSize(aircraft: Aircraft) {
   if (aircraft.kind === "tank") return 116;
   if (aircraft.kind === "heavy") return 112;
   if (aircraft.kind === "stealth") return 106;
-  if (aircraft.side === "ally") return aircraft.kind === "j20" || aircraft.kind === "j35" || aircraft.kind === "f22" || aircraft.kind === "f35" ? 98 : aircraft.kind === "j15" || aircraft.kind === "f15" ? 94 : 90;
+  const stealthFrame = aircraft.kind === "j20" || aircraft.kind === "j35" || aircraft.kind === "f22" || aircraft.kind === "f35" || aircraft.kind === "f117";
+  const heavyFrame = aircraft.kind === "j11" || aircraft.kind === "j15" || aircraft.kind === "j16" || aircraft.kind === "f14" || aircraft.kind === "f15";
+  if (aircraft.side === "ally") return stealthFrame ? 98 : heavyFrame ? 94 : 90;
   if (aircraft.side === "enemy") return aircraft.kind === "scout" ? 90 : 98;
-  if (aircraft.kind === "j20" || aircraft.kind === "j35" || aircraft.kind === "f22" || aircraft.kind === "f35") return 116;
-  return aircraft.kind === "j15" || aircraft.kind === "f15" ? 112 : 103;
+  if (stealthFrame) return 116;
+  return heavyFrame ? 112 : 103;
 }
 
 function drawAircraftSprite(ctx: CanvasRenderingContext2D, sprites: HTMLImageElement | null, key: SpriteKey, size: number) {
   if (!sprites?.complete || sprites.naturalWidth <= 0) return false;
   const slot = spriteSlots[key];
+  if (!slot) return false;
   const cellWidth = sprites.naturalWidth / SPRITE_COLUMNS;
   const cellHeight = sprites.naturalHeight / SPRITE_ROWS;
   ctx.drawImage(
@@ -2387,11 +2720,13 @@ function drawEngineFlamesAt(ctx: CanvasRenderingContext2D, state: GameState, air
 
 function drawJet(ctx: CanvasRenderingContext2D, planeId: PlaneId | EnemyKind, team: Aircraft["side"], cobraProgress = 0) {
   const enemy = team === "enemy";
-  const naval = planeId === "j15";
-  const delta = planeId === "j10";
-  const slender = planeId === "j8";
+  const naval = planeId === "j15" || planeId === "f18" || planeId === "f14";
+  const delta = planeId === "j10" || planeId === "f16";
+  const slender = planeId === "j8" || planeId === "f117";
+  const heavyFrame = planeId === "j11" || planeId === "j16" || planeId === "f14" || planeId === "f15";
+  const stealthFrame = planeId === "j20" || planeId === "j35" || planeId === "f22" || planeId === "f35" || planeId === "f117" || planeId === "stealth";
   const pitch = Math.sin(cobraProgress * Math.PI);
-  const body = enemy ? "#9f1239" : naval ? "#475569" : delta ? "#64748b" : "#d1d5db";
+  const body = enemy ? "#9f1239" : stealthFrame ? "#334155" : heavyFrame ? "#64748b" : naval ? "#475569" : delta ? "#64748b" : "#d1d5db";
   const dark = enemy ? "#450a0a" : "#1f2937";
   const stripe = enemy ? "#fca5a5" : "#ef4444";
 
@@ -2412,7 +2747,26 @@ function drawJet(ctx: CanvasRenderingContext2D, planeId: PlaneId | EnemyKind, te
 
   ctx.fillStyle = enemy ? "#7f1d1d" : "#94a3b8";
   ctx.beginPath();
-  if (slender) {
+  if (stealthFrame) {
+    ctx.moveTo(0, -20);
+    ctx.lineTo(-76, 18);
+    ctx.lineTo(-38, 44);
+    ctx.lineTo(-10, 21);
+    ctx.lineTo(0, 48);
+    ctx.lineTo(10, 21);
+    ctx.lineTo(38, 44);
+    ctx.lineTo(76, 18);
+    ctx.lineTo(0, -20);
+  } else if (heavyFrame) {
+    ctx.moveTo(-10, -12);
+    ctx.lineTo(-88, 20);
+    ctx.lineTo(-60, 46);
+    ctx.lineTo(-10, 23);
+    ctx.moveTo(10, -12);
+    ctx.lineTo(88, 20);
+    ctx.lineTo(60, 46);
+    ctx.lineTo(10, 23);
+  } else if (slender) {
     ctx.moveTo(-8, -8);
     ctx.lineTo(-66, 18);
     ctx.lineTo(-46, 31);
@@ -2745,7 +3099,7 @@ export default function Home() {
   const terrainRef = useRef<HTMLImageElement | null>(null);
   const airportRef = useRef<HTMLImageElement | null>(null);
   const animationRef = useRef<number | null>(null);
-  const scaleRef = useRef({ x: 1, y: 1, dpr: 1 });
+  const scaleRef = useRef({ scale: 1, offsetX: 0, offsetY: 0, dpr: 1, width: VIEW_WIDTH, height: VIEW_HEIGHT });
   const [phase, setPhase] = useState<GamePhase>("menu");
   const [hud, setHud] = useState<HudState>(initialHud);
   const [credits, setCredits] = useState(300);
@@ -2753,6 +3107,9 @@ export default function Home() {
   const [selectedPlane, setSelectedPlane] = useState<PlaneId>("j8");
   const [planeUpgrades, setPlaneUpgrades] = useState<PlaneUpgradeState>(createDefaultPlaneUpgrades);
   const [unlockedPlanes, setUnlockedPlanes] = useState<PlaneUnlockState>(defaultUnlockedPlanes);
+  const [inventory, setInventory] = useState<InventoryState>({ ...defaultInventory, upgradeBlueprints: { ...defaultUpgradeBlueprints } });
+  const [dailyCheckin, setDailyCheckin] = useState<DailyCheckinState>(defaultDailyCheckin);
+  const [rewardNotice, setRewardNotice] = useState("");
   const [joystick, setJoystick] = useState({ x: 0, y: 0, active: false });
   const upgrades = planeUpgrades[selectedPlane] ?? defaultUpgrades;
 
@@ -2764,7 +3121,15 @@ export default function Home() {
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
     canvas.width = Math.max(1, Math.floor(rect.width * dpr));
     canvas.height = Math.max(1, Math.floor(rect.height * dpr));
-    scaleRef.current = { x: rect.width / VIEW_WIDTH, y: rect.height / VIEW_HEIGHT, dpr };
+    const scale = Math.max(rect.width / VIEW_WIDTH, rect.height / VIEW_HEIGHT);
+    scaleRef.current = {
+      scale,
+      offsetX: (rect.width - VIEW_WIDTH * scale) / 2,
+      offsetY: (rect.height - VIEW_HEIGHT * scale) / 2,
+      dpr,
+      width: rect.width,
+      height: rect.height,
+    };
   }, []);
 
   const syncHud = useCallback(() => {
@@ -2894,18 +3259,26 @@ export default function Home() {
 
   const unlockPlane = useCallback(
     (planeId: PlaneId) => {
-      const plane = getPlaneMeta(planeId);
       if (unlockedPlanes[planeId]) {
         selectPlane(planeId);
         return;
       }
-      if (credits < plane.unlockCost) return;
-      const nextCredits = credits - plane.unlockCost;
+      const requirement = getPlaneUnlockRequirement(planeId);
+      if (!canAffordPlane(planeId, credits, inventory)) return;
+      const nextCredits = credits - requirement.credits;
+      const nextInventory: InventoryState = {
+        materials: inventory.materials - requirement.materials,
+        planeBlueprints: inventory.planeBlueprints - requirement.planeBlueprints,
+        upgradeBlueprints: { ...inventory.upgradeBlueprints },
+      };
       const nextUnlocked = { ...unlockedPlanes, [planeId]: true };
       setCredits(nextCredits);
+      setInventory(nextInventory);
       setUnlockedPlanes(nextUnlocked);
       setSelectedPlane(planeId);
+      setRewardNotice(`已解锁 ${getPlaneMeta(planeId).label}`);
       saveCredits(nextCredits);
+      saveInventory(nextInventory);
       saveUnlockedPlanes(nextUnlocked);
       saveSelectedPlane(planeId);
       const state = gameRef.current;
@@ -2917,24 +3290,80 @@ export default function Home() {
         setHud(snapshot(preview));
       }
     },
-    [credits, planeUpgrades, selectPlane, unlockedPlanes],
+    [credits, inventory, planeUpgrades, selectPlane, unlockedPlanes],
   );
 
   const buyUpgrade = useCallback(
     (meta: UpgradeMeta) => {
       const current = planeUpgrades[selectedPlane] ?? defaultUpgrades;
       const level = current[meta.key];
-      const cost = getUpgradeCost(meta, level);
-      if (level >= meta.max || credits < cost) return;
-      const nextCredits = credits - cost;
+      const requirement = getUpgradeRequirement(meta, level);
+      if (level >= meta.max || !canAffordUpgrade(meta, level, credits, inventory)) return;
+      const nextCredits = credits - requirement.credits;
+      const nextInventory: InventoryState = {
+        materials: inventory.materials - requirement.materials,
+        planeBlueprints: inventory.planeBlueprints,
+        upgradeBlueprints: { ...inventory.upgradeBlueprints },
+      };
+      if (requirement.blueprintKey) {
+        nextInventory.upgradeBlueprints[requirement.blueprintKey] -= requirement.blueprints;
+      }
       const nextUpgrades = { ...current, [meta.key]: level + 1 };
       const nextPlaneUpgrades = { ...planeUpgrades, [selectedPlane]: nextUpgrades };
       setCredits(nextCredits);
+      setInventory(nextInventory);
       setPlaneUpgrades(nextPlaneUpgrades);
+      setRewardNotice(`${getPlaneMeta(selectedPlane).label} ${meta.label} 升至 ${level + 1}`);
       saveCredits(nextCredits);
+      saveInventory(nextInventory);
       savePlaneUpgrades(nextPlaneUpgrades);
     },
-    [credits, planeUpgrades, selectedPlane],
+    [credits, inventory, planeUpgrades, selectedPlane],
+  );
+
+  const claimDailyReward = useCallback(() => {
+    if (!canClaimDaily(dailyCheckin)) return;
+    const day = getNextDailyDay(dailyCheckin);
+    const baseReward = dailyRewards[day - 1] ?? dailyRewards[0];
+    const reward: InventoryReward = { ...baseReward, upgradeBlueprints: { ...baseReward.upgradeBlueprints } };
+    let nextUnlocked = unlockedPlanes;
+    if (day === 7) {
+      const giftPlane = getGiftPlane(unlockedPlanes, selectedPlane);
+      if (giftPlane) {
+        reward.giftPlane = giftPlane;
+        nextUnlocked = { ...unlockedPlanes, [giftPlane]: true };
+      } else {
+        reward.planeBlueprints = (reward.planeBlueprints ?? 0) + 3;
+      }
+    }
+    const nextCredits = credits + Math.max(0, Math.floor(reward.credits ?? 0));
+    const nextInventory = addRewardToInventory(inventory, reward);
+    const nextDaily = { lastDate: getTodayKey(), streak: day };
+    setCredits(nextCredits);
+    setInventory(nextInventory);
+    setDailyCheckin(nextDaily);
+    setUnlockedPlanes(nextUnlocked);
+    setRewardNotice(`签到第 ${day} 天：${formatReward(reward)}`);
+    saveCredits(nextCredits);
+    saveInventory(nextInventory);
+    saveDailyCheckin(nextDaily);
+    if (nextUnlocked !== unlockedPlanes) saveUnlockedPlanes(nextUnlocked);
+  }, [credits, dailyCheckin, inventory, selectedPlane, unlockedPlanes]);
+
+  const buyShopPack = useCallback(
+    (packId: ShopPackId) => {
+      const pack = shopPacks.find((item) => item.id === packId);
+      if (!pack || credits < pack.cost) return;
+      const reward = rollShopPack(pack);
+      const nextCredits = credits - pack.cost + Math.max(0, Math.floor(reward.credits ?? 0));
+      const nextInventory = addRewardToInventory(inventory, reward);
+      setCredits(nextCredits);
+      setInventory(nextInventory);
+      setRewardNotice(`${pack.label}：${formatReward(reward)}`);
+      saveCredits(nextCredits);
+      saveInventory(nextInventory);
+    },
+    [credits, inventory],
   );
 
   const togglePause = useCallback(() => {
@@ -2971,9 +3400,13 @@ export default function Home() {
     const storedUpgrades = readPlaneUpgrades();
     const storedUnlocked = readUnlockedPlanes();
     const storedStage = readCampaignStage();
+    const storedInventory = readInventory();
+    const storedDaily = readDailyCheckin();
     const storedPlane = readSelectedPlane(storedUnlocked);
     setPlaneUpgrades(storedUpgrades);
     setUnlockedPlanes(storedUnlocked);
+    setInventory(storedInventory);
+    setDailyCheckin(storedDaily);
     setCredits(readCredits());
     setCampaignStage(storedStage);
     setSelectedPlane(storedPlane);
@@ -3023,8 +3456,10 @@ export default function Home() {
 
       const context = canvasRef.current?.getContext("2d");
       if (context) {
-        const { x, y, dpr } = scaleRef.current;
-        context.setTransform(dpr * x, 0, 0, dpr * y, 0, 0);
+        const { scale, offsetX, offsetY, dpr, width, height } = scaleRef.current;
+        context.setTransform(dpr, 0, 0, dpr, 0, 0);
+        context.clearRect(0, 0, width, height);
+        context.setTransform(dpr * scale, 0, 0, dpr * scale, dpr * offsetX, dpr * offsetY);
         drawGame(context, state, spritesRef.current, weaponSpritesRef.current, terrainRef.current, airportRef.current);
         context.setTransform(1, 0, 0, 1, 0, 0);
       }
@@ -3113,6 +3548,10 @@ export default function Home() {
   const showOver = phase === "over";
   const showStageClear = phase === "stageClear";
   const showPause = phase === "paused";
+  const nextDailyDay = getNextDailyDay(dailyCheckin);
+  const dailyClaimable = canClaimDaily(dailyCheckin);
+  const nextDailyReward = dailyRewards[nextDailyDay - 1] ?? dailyRewards[0];
+  const dailyRewardText = nextDailyDay === 7 ? `${formatReward(nextDailyReward)}、随机解锁一架未拥有战机` : formatReward(nextDailyReward);
   const hangarGroups: { faction: PlaneFaction; title: string; planes: PlaneMeta[] }[] = [
     { faction: "china", title: "中国战斗机", planes: planeCatalog.filter((item) => item.faction === "china") },
     { faction: "usa", title: "美国战斗机", planes: planeCatalog.filter((item) => item.faction === "usa") },
@@ -3228,7 +3667,7 @@ export default function Home() {
                   <p>无限空战</p>
                   <h1>飞机大战</h1>
                   <div className="main-plane-summary">
-                    <div className={`plane-preview plane-${selectedPlane}`} aria-hidden="true">
+                    <div className={getPlanePreviewClass(selectedPlane)} aria-hidden="true">
                       <i />
                     </div>
                     <span>当前战机</span>
@@ -3237,6 +3676,11 @@ export default function Home() {
                       {getFactionLabel(plane.faction)}阵营 · 血量 {getMaxHp(upgrades, selectedPlane)} / 燃油 {getMaxFuel(upgrades, selectedPlane)}
                     </em>
                   </div>
+                  <button className="daily-card" type="button" onClick={claimDailyReward} disabled={!dailyClaimable}>
+                    <span>每日签到 · 第 {nextDailyDay} 天</span>
+                    <strong>{dailyClaimable ? dailyRewardText : "今日已领取"}</strong>
+                  </button>
+                  {rewardNotice && <div className="reward-toast">{rewardNotice}</div>}
                   <div className="mode-actions">
                     <button className="primary-action mode-action" type="button" onClick={startStageGame}>
                       <span>关卡出击</span>
@@ -3265,6 +3709,14 @@ export default function Home() {
                       <strong>{credits}</strong>
                     </div>
                     <div>
+                      <span>升级材料</span>
+                      <strong>{inventory.materials}</strong>
+                    </div>
+                    <div>
+                      <span>飞机蓝图</span>
+                      <strong>{inventory.planeBlueprints}</strong>
+                    </div>
+                    <div>
                       <span>最高分</span>
                       <strong>{hud.bestScore}</strong>
                     </div>
@@ -3273,6 +3725,14 @@ export default function Home() {
                       <strong>{campaignStage}</strong>
                     </div>
                   </div>
+                  <div className="blueprint-strip" aria-label="升级蓝图库存">
+                    {upgradeCatalog.map((meta) => (
+                      <span key={meta.key}>
+                        {upgradeBlueprintLabels[meta.key]} {inventory.upgradeBlueprints[meta.key]}
+                      </span>
+                    ))}
+                  </div>
+                  {rewardNotice && <div className="reward-toast">{rewardNotice}</div>}
                   <div className="plane-list" aria-label="选择战机">
                     {hangarGroups.map((group) => (
                       <section className="faction-section" key={group.faction}>
@@ -3287,7 +3747,7 @@ export default function Home() {
                             const unlocked = unlockedPlanes[item.id];
                             const currentUpgrades = planeUpgrades[item.id] ?? defaultUpgrades;
                             const active = selectedPlane === item.id;
-                            const unlockable = credits >= item.unlockCost;
+                            const unlockable = canAffordPlane(item.id, credits, inventory);
                             return (
                               <button
                                 className={["plane-card", active ? "active" : "", unlocked ? "unlocked" : "locked"].filter(Boolean).join(" ")}
@@ -3296,7 +3756,7 @@ export default function Home() {
                                 onClick={() => (unlocked ? selectPlane(item.id) : unlockPlane(item.id))}
                                 disabled={!unlocked && !unlockable}
                               >
-                                <div className={`plane-preview plane-${item.id}`} aria-hidden="true">
+                                <div className={getPlanePreviewClass(item.id)} aria-hidden="true">
                                   <i />
                                 </div>
                                 <span>
@@ -3306,7 +3766,7 @@ export default function Home() {
                                 <strong>
                                   {unlocked
                                     ? `血量 ${getMaxHp(currentUpgrades, item.id)} · 燃油 ${getMaxFuel(currentUpgrades, item.id)}`
-                                    : `${unlockable ? "解锁" : "需要"} ${item.unlockCost} 战功`}
+                                    : `${unlockable ? "解锁" : "需要"} ${formatPlaneRequirement(item.id)}`}
                                 </strong>
                               </button>
                             );
@@ -3318,15 +3778,15 @@ export default function Home() {
                   <div className="upgrade-list" aria-label="战机升级">
                     {upgradeCatalog.map((meta) => {
                       const level = upgrades[meta.key];
-                      const cost = getUpgradeCost(meta, level);
                       const maxed = level >= meta.max;
+                      const affordable = !maxed && canAffordUpgrade(meta, level, credits, inventory);
                       return (
                         <button
                           className="upgrade-card"
                           type="button"
                           key={meta.key}
                           onClick={() => buyUpgrade(meta)}
-                          disabled={maxed || credits < cost}
+                          disabled={maxed || !affordable}
                         >
                           <span>
                             {meta.label}
@@ -3335,10 +3795,25 @@ export default function Home() {
                             </small>
                           </span>
                           <em>{meta.description}</em>
-                          <strong>{maxed ? "已满级" : `${cost} 战功`}</strong>
+                          <strong>{formatUpgradeRequirement(meta, level)}</strong>
                         </button>
                       );
                     })}
+                  </div>
+                  <div className="shop-list" aria-label="商店礼包">
+                    {shopPacks.map((pack) => (
+                      <button
+                        className="shop-card"
+                        type="button"
+                        key={pack.id}
+                        onClick={() => buyShopPack(pack.id)}
+                        disabled={credits < pack.cost}
+                      >
+                        <span>{pack.label}</span>
+                        <em>{pack.description}</em>
+                        <strong>{pack.cost} 战功</strong>
+                      </button>
+                    ))}
                   </div>
                   <div className="panel-actions">
                     <button className="primary-action" type="button" onClick={startStageGame}>

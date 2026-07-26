@@ -438,6 +438,46 @@ button {
   font-weight: 800;
 }
 
+.daily-card,
+.reward-toast {
+  width: 100%;
+  margin: 0 0 10px;
+  border-radius: 8px;
+  text-align: left;
+}
+
+.daily-card {
+  display: grid;
+  gap: 4px;
+  padding: 10px 12px;
+  border: 1px solid rgba(250, 204, 21, 0.34);
+  background: linear-gradient(135deg, rgba(250, 204, 21, 0.22), rgba(14, 165, 233, 0.15));
+  color: #f8fafc;
+  cursor: pointer;
+}
+
+.daily-card span,
+.shop-card span {
+  color: #fff;
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.daily-card strong {
+  color: #fef08a;
+  font-size: 12px;
+  line-height: 1.25;
+}
+
+.reward-toast {
+  padding: 8px 10px;
+  border: 1px solid rgba(190, 242, 100, 0.28);
+  background: rgba(20, 83, 45, 0.32);
+  color: #dcfce7;
+  font-size: 12px;
+  font-weight: 900;
+}
+
 .panel-score {
   margin: 0 auto 14px;
   padding: 10px 14px;
@@ -532,7 +572,7 @@ button {
 
 .hangar-summary {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 8px;
   margin: 0 0 12px;
 }
@@ -544,6 +584,23 @@ button {
   border-radius: 8px;
   background: rgba(14, 165, 233, 0.14);
   text-align: center;
+}
+
+.blueprint-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0 0 12px;
+}
+
+.blueprint-strip span {
+  padding: 5px 7px;
+  border: 1px solid rgba(186, 230, 253, 0.22);
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.22);
+  color: #dbeafe;
+  font-size: 10px;
+  font-weight: 900;
 }
 
 .plane-list {
@@ -578,7 +635,8 @@ button {
   gap: 8px;
 }
 
-.upgrade-list {
+.upgrade-list,
+.shop-list {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 8px;
@@ -586,7 +644,8 @@ button {
 }
 
 .plane-card,
-.upgrade-card {
+.upgrade-card,
+.shop-card {
   min-width: 0;
   border: 1px solid rgba(148, 163, 184, 0.22);
   border-radius: 8px;
@@ -633,7 +692,8 @@ button {
 }
 
 .plane-card strong,
-.upgrade-card strong {
+.upgrade-card strong,
+.shop-card strong {
   display: block;
   margin-top: 7px;
   color: #bef264;
@@ -648,8 +708,25 @@ button {
   padding: 10px;
 }
 
-.upgrade-card em {
-  display: none;
+.shop-list {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.shop-card {
+  min-height: 86px;
+  display: grid;
+  align-content: space-between;
+  padding: 10px;
+}
+
+.upgrade-card em,
+.shop-card em {
+  display: block;
+  color: rgba(219, 234, 254, 0.76);
+  font-size: 11px;
+  line-height: 1.22;
+  font-style: normal;
+  font-weight: 800;
 }
 
 .plane-preview {
@@ -706,6 +783,72 @@ button {
 
 .plane-f35 {
   background-position: 100% 50%;
+}
+
+.plane-generated {
+  overflow: hidden;
+  background-image: none;
+}
+
+.plane-generated::before,
+.plane-generated::after,
+.plane-generated i {
+  position: absolute;
+  left: 50%;
+  display: block;
+  content: "";
+  transform: translateX(-50%);
+}
+
+.plane-generated::before {
+  top: 7px;
+  width: 13px;
+  height: 50px;
+  border-radius: 50% 50% 42% 42%;
+  background: linear-gradient(180deg, #f8fafc, #64748b 62%, #1f2937);
+  box-shadow: inset 0 0 0 1px rgba(15, 23, 42, 0.35);
+  z-index: 2;
+}
+
+.plane-generated::after {
+  top: 22px;
+  width: 72px;
+  height: 34px;
+  clip-path: polygon(50% 0, 100% 58%, 70% 100%, 50% 66%, 30% 100%, 0 58%);
+  background: linear-gradient(135deg, #cbd5e1, #475569);
+  z-index: 1;
+}
+
+.plane-generated i {
+  top: 47px;
+  width: 43px;
+  height: 18px;
+  clip-path: polygon(50% 0, 100% 90%, 62% 100%, 50% 55%, 38% 100%, 0 90%);
+  background: #334155;
+  z-index: 3;
+}
+
+.plane-j11.plane-generated::after,
+.plane-j16.plane-generated::after,
+.plane-f14.plane-generated::after,
+.plane-f15.plane-generated::after {
+  width: 82px;
+  clip-path: polygon(50% 2%, 100% 52%, 78% 100%, 50% 72%, 22% 100%, 0 52%);
+}
+
+.plane-j16.plane-generated::before,
+.plane-f117.plane-generated::before {
+  background: linear-gradient(180deg, #dbeafe, #475569 58%, #111827);
+}
+
+.plane-f117.plane-generated::after {
+  width: 78px;
+  clip-path: polygon(50% 0, 100% 45%, 68% 100%, 50% 72%, 32% 100%, 0 45%);
+  background: linear-gradient(135deg, #111827, #475569);
+}
+
+.plane-f14.plane-generated::after {
+  clip-path: polygon(50% 0, 100% 40%, 82% 92%, 50% 76%, 18% 92%, 0 40%);
 }
 
 .mobile-controls {
@@ -829,7 +972,7 @@ button {
 @media (max-width: 620px) {
   .start-panel {
     width: min(92vw, 360px);
-    padding: 18px;
+    padding: 16px;
   }
 
   .start-panel h1 {
@@ -838,6 +981,16 @@ button {
 
   .hangar-panel {
     width: min(94vw, 390px);
+    max-height: calc(100dvh - 18px);
+  }
+
+  .hangar-summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .blueprint-strip {
+    max-height: 58px;
+    overflow: auto;
   }
 
   .plane-list {
@@ -866,23 +1019,42 @@ button {
   }
 
   .plane-card span,
-  .upgrade-card span {
+  .upgrade-card span,
+  .shop-card span {
     font-size: 12px;
   }
 
   .plane-card strong,
   .upgrade-card strong,
+  .shop-card strong,
   .plane-card small,
   .upgrade-card small {
     font-size: 10px;
   }
 
-  .upgrade-list {
+  .upgrade-list,
+  .shop-list {
+    grid-template-columns: 1fr;
     gap: 6px;
   }
 
-  .upgrade-card {
+  .upgrade-card,
+  .shop-card {
     min-height: 72px;
     padding: 8px;
+  }
+}
+
+@media (min-width: 621px) and (max-width: 920px) and (hover: none) and (pointer: coarse) {
+  .hangar-panel {
+    width: min(92vw, 720px);
+  }
+
+  .plane-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .shop-list {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 }
