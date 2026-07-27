@@ -39,7 +39,8 @@ const PLANE_KEY = "plane-battle-selected-plane";
 const UNLOCKED_PLANES_KEY = "plane-battle-unlocked-planes";
 const CAMPAIGN_STAGE_KEY = "plane-battle-campaign-stage";
 const STORY_PROGRESS_KEY = "plane-battle-story-progress";
-const GAME_VERSION = "1.01";
+const GAME_VERSION = "1.05";
+const STORY_UNLOCK_STAGE = 10;
 const SAVE_SCHEMA_VERSION = "1.0";
 const SAVE_VERSION_KEY = "plane-battle-save-version";
 const TUTORIAL_KEY = "plane-battle-tutorial-1.01";
@@ -1536,6 +1537,10 @@ function isEndlessUnlocked(stage: number) {
   return normalizeStageNumber(stage) > 5;
 }
 
+function isStoryUnlocked(stage: number) {
+  return normalizeStageNumber(stage) > STORY_UNLOCK_STAGE;
+}
+
 function readPlaneUpgrades(): PlaneUpgradeState {
   if (typeof window === "undefined") return createDefaultPlaneUpgrades();
 
@@ -1854,6 +1859,11 @@ function getStoryMission(faction: StoryFaction, stage: number) {
 
 function getStoryFactionLabel(faction: StoryFaction) {
   return faction === "usa" ? "美国线" : "日本线";
+}
+
+function advanceStoryProgress(progress: StoryProgressState, faction: StoryFaction, completedStage: number) {
+  const nextStage = Math.min(storyCampaigns[faction].length, normalizeStageNumber(completedStage) + 1);
+  return { ...progress, [faction]: Math.max(progress[faction] ?? 1, nextStage) };
 }
 
 function getStageWingmen(stage: number) {
@@ -2558,7 +2568,7 @@ function destroyEnemy(state: GameState, enemy: Aircraft) {
   const dir = direction(enemy.angle);
   const wreckLife = enemy.kind === "tank" || enemy.kind === "heavy" ? 1.25 : 0.9;
   state.score += points;
-  if (state.mode === "stage") {
+  if (state.mode === "stage" || state.mode === "story") {
     state.stageKills = Math.min(state.stageTarget, state.stageKills + 1);
   } else {
     state.difficulty = Math.max(state.difficulty, getDifficultyFromScore(state.score));
@@ -4173,7 +4183,16 @@ export default function Home() {
   );
 
   const startStageGame = useCallback(() => startRun("stage", campaignStage), [campaignStage, startRun]);
-  const startStoryGame = useCallback((faction: StoryFaction) => startRun("story", storyProgress[faction], faction), [startRun, storyProgress]);
+  const startStoryGame = useCallback(
+    (faction: StoryFaction) => {
+      if (!isStoryUnlocked(campaignStage)) {
+        setRewardNotice("通关第10关后解锁剧情模式");
+        return;
+      }
+      startRun("story", storyProgress[faction], faction);
+    },
+    [campaignStage, startRun, storyProgress],
+  );
   const startEndlessGame = useCallback(() => {
     if (!isEndlessUnlocked(campaignStage)) {
       setRewardNotice("通关第5关后解锁无尽模式");
@@ -4448,8 +4467,7 @@ export default function Home() {
         if (state.mode === "story" && state.storyFaction) {
           setStoryProgress((value) => {
             const faction = state.storyFaction as StoryFaction;
-            const nextStage = Math.min(storyCampaigns[faction].length, state.stage + 1);
-            const next = { ...value, [faction]: Math.max(value[faction], nextStage) };
+            const next = advanceStoryProgress(value, faction, state.stage);
             saveStoryProgress(next);
             return next;
           });
@@ -4577,6 +4595,7 @@ export default function Home() {
   const showStageClear = phase === "stageClear";
   const showPause = phase === "paused";
   const endlessUnlocked = isEndlessUnlocked(campaignStage);
+  const storyUnlocked = isStoryUnlocked(campaignStage);
   const visibleBlueprintPlaneIds = PLANE_IDS.filter((planeId) => !unlockedPlanes[planeId] && inventory.planeBlueprints[planeId] > 0);
   const totalPlaneBlueprints = visibleBlueprintPlaneIds.reduce((total, planeId) => total + inventory.planeBlueprints[planeId], 0);
   const nextDailyDay = getNextDailyDay(dailyCheckin);
@@ -4772,16 +4791,16 @@ export default function Home() {
                       <span>无尽模式</span>
                       <small>{endlessUnlocked ? "开放空域 · 持续追击" : "通关第5关解锁"}</small>
                     </button>
-                    <button className="secondary-action mode-action story-action" type="button" onClick={() => startStoryGame("usa")}>
+                    <button className="secondary-action mode-action story-action" type="button" onClick={() => startStoryGame("usa")} disabled={!storyUnlocked}>
                       <span>美国剧情</span>
                       <small>
-                        第 {storyProgress.usa} 章 · {usaStoryMission.title}
+                        {storyUnlocked ? `第 ${storyProgress.usa} 章 · ${usaStoryMission.title}` : "通关第10关解锁"}
                       </small>
                     </button>
-                    <button className="secondary-action mode-action story-action" type="button" onClick={() => startStoryGame("japan")}>
+                    <button className="secondary-action mode-action story-action" type="button" onClick={() => startStoryGame("japan")} disabled={!storyUnlocked}>
                       <span>日本剧情</span>
                       <small>
-                        第 {storyProgress.japan} 章 · {japanStoryMission.title}
+                        {storyUnlocked ? `第 ${storyProgress.japan} 章 · ${japanStoryMission.title}` : "通关第10关解锁"}
                       </small>
                     </button>
                   </div>

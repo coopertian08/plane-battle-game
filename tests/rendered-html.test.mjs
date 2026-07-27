@@ -29,7 +29,7 @@ test("server-renders the plane battle game shell", async () => {
   assert.match(response.headers.get("content-type") ?? "", /^text\/html\b/i);
 
   const html = await response.text();
-  assert.match(html, /<title>飞机大战 1\.01<\/title>/i);
+  assert.match(html, /<title>飞机大战 1\.05<\/title>/i);
   assert.match(html, /<canvas/i);
   assert.match(html, /飞机大战/);
   assert.match(html, /关卡出击/);
@@ -128,7 +128,8 @@ test("keeps the finished game free of starter preview code", async () => {
   assert.match(page, /CAMPAIGN_STAGE_KEY/);
   assert.match(page, /STORY_PROGRESS_KEY/);
   assert.match(page, /UNLOCKED_PLANES_KEY/);
-  assert.match(page, /GAME_VERSION = "1\.01"/);
+  assert.match(page, /GAME_VERSION = "1\.05"/);
+  assert.match(page, /STORY_UNLOCK_STAGE = 10/);
   assert.match(page, /SAVE_SCHEMA_VERSION = "1\.0"/);
   assert.match(page, /SAVE_VERSION_KEY = "plane-battle-save-version"/);
   assert.match(page, /TUTORIAL_KEY = "plane-battle-tutorial-1\.01"/);
@@ -384,8 +385,11 @@ test("keeps the finished game free of starter preview code", async () => {
   assert.match(page, /normalizeStageNumber/);
   assert.match(page, /function isEndlessUnlocked\(stage: number\)/);
   assert.match(page, /normalizeStageNumber\(stage\) > 5/);
+  assert.match(page, /function isStoryUnlocked\(stage: number\)/);
+  assert.match(page, /normalizeStageNumber\(stage\) > STORY_UNLOCK_STAGE/);
   assert.match(page, /function getStoryMission\(faction: StoryFaction, stage: number\)/);
   assert.match(page, /function getStoryFactionLabel\(faction: StoryFaction\)/);
+  assert.match(page, /function advanceStoryProgress\(progress: StoryProgressState, faction: StoryFaction, completedStage: number\)/);
   assert.match(page, /storyMission \? storyMission\.target/);
   assert.match(page, /storyMission \? storyMission\.reward/);
   assert.match(page, /storyMission \? storyMission\.difficulty/);
@@ -400,6 +404,7 @@ test("keeps the finished game free of starter preview code", async () => {
   assert.match(page, /const wingmen = mode === "story" \? Math\.max\(2, getStageWingmen/);
   assert.match(page, /150 \+ Math\.max\(0, stage - 1\) \* 50/);
   assert.match(page, /stageKills/);
+  assert.match(page, /state\.mode === "stage" \|\| state\.mode === "story"/);
   assert.match(page, /spawnRegularEnemy/);
   assert.match(page, /\? "stealth"/);
   assert.match(page, /\? "heavy"/);
@@ -412,6 +417,9 @@ test("keeps the finished game free of starter preview code", async () => {
   assert.doesNotMatch(page, /enemy\.y \+= escape\.y \* push/);
   assert.match(page, /startStageGame/);
   assert.match(page, /startStoryGame/);
+  assert.match(page, /通关第10关后解锁剧情模式/);
+  assert.match(page, /disabled=\{!storyUnlocked\}/);
+  assert.match(page, /通关第10关解锁/);
   assert.match(page, /safeStage/);
   assert.match(page, /关卡状态已重置/);
   assert.match(page, /startEndlessGame/);
@@ -477,7 +485,7 @@ test("keeps the finished game free of starter preview code", async () => {
   assert.doesNotMatch(page, /爆弹/);
   assert.doesNotMatch(page, /lives/);
   assert.doesNotMatch(page, /arrowleft|arrowright|arrowup|arrowdown/);
-  assert.match(layout, /title:\s*"飞机大战 1\.01"/);
+  assert.match(layout, /title:\s*"飞机大战 1\.05"/);
   assert.match(layout, /export const viewport/);
   assert.match(layout, /width:\s*"device-width"/);
   assert.match(layout, /initialScale:\s*1/);
@@ -561,7 +569,7 @@ test("keeps the finished game free of starter preview code", async () => {
   assert.match(css, /warehouse-grid/);
   assert.match(css, /warehouse-empty/);
   assert.match(css, /plane-card\.locked/);
-  assert.match(packageJson, /"version": "1\.0\.1"/);
+  assert.match(packageJson, /"version": "1\.0\.5"/);
   assert.match(packageJson, /"export:github-pages": "node scripts\/export-github-pages\.mjs"/);
   assert.match(exportScript, /dist", "github-pages"/);
   assert.match(exportScript, /GITHUB_REPOSITORY/);
