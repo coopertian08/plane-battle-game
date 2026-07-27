@@ -38,6 +38,7 @@ const DAILY_CHECKIN_KEY = "plane-battle-daily-checkin";
 const PLANE_KEY = "plane-battle-selected-plane";
 const UNLOCKED_PLANES_KEY = "plane-battle-unlocked-planes";
 const CAMPAIGN_STAGE_KEY = "plane-battle-campaign-stage";
+const STORY_PROGRESS_KEY = "plane-battle-story-progress";
 const GAME_VERSION = "1.01";
 const SAVE_SCHEMA_VERSION = "1.0";
 const SAVE_VERSION_KEY = "plane-battle-save-version";
@@ -51,12 +52,14 @@ const RESETTABLE_SAVE_KEYS = [
   PLANE_KEY,
   UNLOCKED_PLANES_KEY,
   CAMPAIGN_STAGE_KEY,
+  STORY_PROGRESS_KEY,
 ] as const;
 
 type GamePhase = "menu" | "hangar" | "takeoff" | "running" | "paused" | "playerDying" | "over" | "stageClear";
-type GameMode = "endless" | "stage";
+type GameMode = "endless" | "stage" | "story";
 type HomeTab = "battle" | "upgrade" | "shop" | "inventory";
 type TutorialKey = "controls" | "missile" | "refuel";
+type StoryFaction = "usa" | "japan";
 type PlaneId = (typeof PLANE_IDS)[number];
 type PlaneFaction = (typeof FACTION_IDS)[number];
 type UpgradeKey = "firepower" | "missiles" | "armor" | "fuelTank" | "engine" | "speed" | "tanker" | "ammo";
@@ -88,6 +91,19 @@ type InventoryState = {
 type DailyCheckinState = {
   lastDate: string;
   streak: number;
+};
+
+type StoryProgressState = Record<StoryFaction, number>;
+
+type StoryMission = {
+  stage: number;
+  year: string;
+  title: string;
+  theatre: string;
+  objective: string;
+  target: number;
+  reward: number;
+  difficulty: number;
 };
 
 type InventoryReward = {
@@ -284,6 +300,8 @@ type GameState = {
   floaters: Floater[];
   selectedPlane: PlaneId;
   opponentFaction: PlaneFaction;
+  storyFaction: StoryFaction | null;
+  storyMission: StoryMission | null;
   upgrades: UpgradeState;
   score: number;
   bestScore: number;
@@ -328,6 +346,11 @@ type HudState = {
   allies: number;
   radarRange: number;
   radarBlips: RadarBlip[];
+  storyFaction: StoryFaction | null;
+  missionTitle: string;
+  missionObjective: string;
+  missionTheatre: string;
+  missionYear: string;
 };
 
 type InputState = {
@@ -369,6 +392,138 @@ const defaultInventory: InventoryState = {
 const defaultDailyCheckin: DailyCheckinState = {
   lastDate: "",
   streak: 0,
+};
+
+const defaultStoryProgress: StoryProgressState = {
+  usa: 1,
+  japan: 1,
+};
+
+const storyCampaigns: Record<StoryFaction, StoryMission[]> = {
+  usa: [
+    {
+      stage: 1,
+      year: "1941",
+      title: "战争前夕",
+      theatre: "珍珠港外海巡逻",
+      objective: "完成战备巡逻，确认异常机群并击退第一波侦察机。",
+      target: 7,
+      reward: 180,
+      difficulty: 1,
+    },
+    {
+      stage: 2,
+      year: "1941",
+      title: "珍珠港防空",
+      theatre: "瓦胡岛上空",
+      objective: "掩护港区撤离，拦截来袭轰炸编队。",
+      target: 10,
+      reward: 240,
+      difficulty: 2,
+    },
+    {
+      stage: 3,
+      year: "1942",
+      title: "珊瑚海搜索",
+      theatre: "珊瑚海",
+      objective: "搜索敌方航母编队，保护己方舰载机返航。",
+      target: 12,
+      reward: 300,
+      difficulty: 3,
+    },
+    {
+      stage: 4,
+      year: "1942",
+      title: "中途岛反击",
+      theatre: "中途岛北方海域",
+      objective: "突破护航机群，摧毁敌方航母甲板航空力量。",
+      target: 15,
+      reward: 380,
+      difficulty: 4,
+    },
+    {
+      stage: 5,
+      year: "1943",
+      title: "瓜岛航空战",
+      theatre: "亨德森机场",
+      objective: "守住岛上机场，压制夜间袭扰机群。",
+      target: 18,
+      reward: 460,
+      difficulty: 5,
+    },
+    {
+      stage: 6,
+      year: "1944",
+      title: "菲律宾海",
+      theatre: "马里亚纳群岛",
+      objective: "拦截大规模舰载机攻击，保护航母特混舰队。",
+      target: 22,
+      reward: 560,
+      difficulty: 7,
+    },
+  ],
+  japan: [
+    {
+      stage: 1,
+      year: "1941",
+      title: "战争前夕",
+      theatre: "南云机动部队训练空域",
+      objective: "完成远航编队演练，清除暴露航线的侦察机。",
+      target: 7,
+      reward: 180,
+      difficulty: 1,
+    },
+    {
+      stage: 2,
+      year: "1941",
+      title: "珍珠港突袭",
+      theatre: "瓦胡岛北部航线",
+      objective: "护送攻击队进入目标空域，压制港区防空战机。",
+      target: 11,
+      reward: 250,
+      difficulty: 2,
+    },
+    {
+      stage: 3,
+      year: "1942",
+      title: "印度洋突进",
+      theatre: "锡兰外海",
+      objective: "搜索英军舰队，击退拦截机群并保障舰队机动。",
+      target: 13,
+      reward: 320,
+      difficulty: 3,
+    },
+    {
+      stage: 4,
+      year: "1942",
+      title: "中途岛警戒",
+      theatre: "中途岛西北海域",
+      objective: "掩护航母甲板整备，阻止敌方鱼雷机逼近。",
+      target: 16,
+      reward: 390,
+      difficulty: 4,
+    },
+    {
+      stage: 5,
+      year: "1942",
+      title: "瓜岛争夺",
+      theatre: "所罗门群岛",
+      objective: "突入岛上机场空域，压制美军增援航线。",
+      target: 19,
+      reward: 480,
+      difficulty: 5,
+    },
+    {
+      stage: 6,
+      year: "1944",
+      title: "莱特湾防线",
+      theatre: "菲律宾中部海域",
+      objective: "拦截舰队防空圈外的攻击机，掩护主力舰撤退。",
+      target: 23,
+      reward: 570,
+      difficulty: 7,
+    },
+  ],
 };
 
 const defaultTutorialProgress: Record<TutorialKey, boolean> = {
@@ -440,6 +595,11 @@ const initialHud: HudState = {
   allies: 0,
   radarRange: 0,
   radarBlips: [],
+  storyFaction: null,
+  missionTitle: "",
+  missionObjective: "",
+  missionTheatre: "",
+  missionYear: "",
 };
 
 const planeCatalog: PlaneMeta[] = [
@@ -1349,6 +1509,25 @@ function saveCampaignStage(stage: number) {
   }
 }
 
+function readStoryProgress(): StoryProgressState {
+  if (typeof window === "undefined") return { ...defaultStoryProgress };
+  try {
+    const parsed = JSON.parse(window.localStorage.getItem(STORY_PROGRESS_KEY) ?? "{}") as Partial<Record<StoryFaction, unknown>>;
+    return {
+      usa: clamp(normalizeStageNumber(Number(parsed.usa) || defaultStoryProgress.usa), 1, storyCampaigns.usa.length),
+      japan: clamp(normalizeStageNumber(Number(parsed.japan) || defaultStoryProgress.japan), 1, storyCampaigns.japan.length),
+    };
+  } catch {
+    return { ...defaultStoryProgress };
+  }
+}
+
+function saveStoryProgress(progress: StoryProgressState) {
+  if (typeof window !== "undefined") {
+    window.localStorage.setItem(STORY_PROGRESS_KEY, JSON.stringify(progress));
+  }
+}
+
 function normalizeStageNumber(stage: number) {
   return Number.isFinite(stage) ? clamp(Math.floor(stage), 1, 999) : 1;
 }
@@ -1667,6 +1846,16 @@ function getStageDifficulty(stage: number) {
   return 1 + Math.floor(Math.max(0, stage - 1) * 0.64);
 }
 
+function getStoryMission(faction: StoryFaction, stage: number) {
+  const missions = storyCampaigns[faction];
+  const index = clamp(normalizeStageNumber(stage) - 1, 0, missions.length - 1);
+  return missions[index];
+}
+
+function getStoryFactionLabel(faction: StoryFaction) {
+  return faction === "usa" ? "美国线" : "日本线";
+}
+
 function getStageWingmen(stage: number) {
   return stage >= 2 && stage % 2 === 0 ? 2 : 0;
 }
@@ -1701,6 +1890,11 @@ function getMagazineSize(planeId: PlaneId) {
 
 function getMaxCannonAmmo(upgrades: UpgradeState, planeId: PlaneId) {
   return 620 + getPlaneTier(planeId) * 70 + upgrades.ammo * 240;
+}
+
+function getPlayerFireInterval(state: GameState) {
+  const tier = getPlaneTier(state.selectedPlane);
+  return Math.max(0.052, 0.112 - tier * 0.0055 - state.upgrades.engine * 0.0045 - state.upgrades.firepower * 0.002);
 }
 
 function getSpeedStats(upgrades: UpgradeState, planeId: PlaneId) {
@@ -1827,6 +2021,7 @@ function createGameState(
   selectedPlane: PlaneId,
   mode: GameMode = "endless",
   stage = 1,
+  storyFaction: StoryFaction | null = null,
 ): GameState {
   const plane = getPlaneMeta(selectedPlane);
   const maxHp = getMaxHp(upgrades, selectedPlane);
@@ -1834,14 +2029,15 @@ function createGameState(
   const maxAmmoReserve = getMaxCannonAmmo(upgrades, selectedPlane);
   const magazineSize = getMagazineSize(selectedPlane);
   const speedStats = getSpeedStats(upgrades, selectedPlane);
+  const storyMission = mode === "story" ? getStoryMission(storyFaction ?? "usa", stage) : null;
   const playerRadius = isStealthPlane(selectedPlane) ? 33 : isHeavyPlane(selectedPlane) ? 32 : 30;
   const state: GameState = {
     phase: "menu",
     mode,
-    stage,
-    stageTarget: mode === "stage" ? getStageTarget(stage) : 0,
+    stage: storyMission?.stage ?? stage,
+    stageTarget: storyMission ? storyMission.target : mode === "stage" ? getStageTarget(stage) : 0,
     stageKills: 0,
-    stageReward: mode === "stage" ? getStageReward(stage) : 0,
+    stageReward: storyMission ? storyMission.reward : mode === "stage" ? getStageReward(stage) : 0,
     player: {
       id: 0,
       side: "player",
@@ -1880,10 +2076,12 @@ function createGameState(
     floaters: [],
     selectedPlane,
     opponentFaction: getRandomOpponentFaction(selectedPlane),
+    storyFaction: mode === "story" ? storyFaction ?? "usa" : null,
+    storyMission,
     upgrades,
     score: 0,
     bestScore,
-    difficulty: mode === "stage" ? getStageDifficulty(stage) : 1,
+    difficulty: storyMission ? storyMission.difficulty : mode === "stage" ? getStageDifficulty(stage) : 1,
     spawnTimer: 0.85,
     earnedCredits: 0,
     rewardClaimed: false,
@@ -1895,7 +2093,7 @@ function createGameState(
   };
 
   state.player.id = makeId(state);
-  const wingmen = mode === "stage" ? getStageWingmen(stage) : 5;
+  const wingmen = mode === "story" ? Math.max(2, getStageWingmen(storyMission?.stage ?? stage)) : mode === "stage" ? getStageWingmen(stage) : 5;
   for (let index = 0; index < wingmen; index += 1) {
     const side = index % 2 === 0 ? -1 : 1;
     const ally = createAircraft(
@@ -1980,6 +2178,11 @@ function snapshot(state: GameState): HudState {
     allies: state.allies.length,
     radarRange,
     radarBlips,
+    storyFaction: state.storyFaction,
+    missionTitle: state.storyMission?.title ?? "",
+    missionObjective: state.storyMission?.objective ?? "",
+    missionTheatre: state.storyMission?.theatre ?? "",
+    missionYear: state.storyMission?.year ?? "",
   };
 }
 
@@ -2100,7 +2303,7 @@ function fireGuns(state: GameState, aircraft: Aircraft, owner: ProjectileOwner, 
 
   if (!resetTimer) return shotsFired > 0;
 
-  aircraft.fireTimer = owner === "enemy" ? randomBetween(0.78, 1.35) : Math.max(0.085, 0.16 - state.upgrades.engine * 0.009);
+  aircraft.fireTimer = owner === "enemy" ? randomBetween(0.78, 1.35) : getPlayerFireInterval(state);
   return shotsFired > 0;
 }
 
@@ -2149,7 +2352,7 @@ function fireMissile(state: GameState) {
     vx: dir.x * (720 + player.speed * 0.8),
     vy: dir.y * (720 + player.speed * 0.8),
     power: 26 + state.upgrades.firepower * 2.6 + state.upgrades.missiles * 1.8,
-    life: 4.4,
+    life: 4.8,
     length: 30,
     targetId: target?.id,
     turnRate: 3.8 + state.upgrades.engine * 0.18,
@@ -2322,8 +2525,8 @@ function chooseMissileTarget(state: GameState, shooter: Vector & { angle: number
   for (const enemy of state.enemies) {
     const dist = distance(shooter, enemy);
     const offBoresight = Math.abs(normalizeAngle(angleTo(shooter, enemy) - shooter.angle));
-    if (offBoresight < 1.85) {
-      const coneScore = dist * (1 + offBoresight * 0.35);
+    if (offBoresight < 2.45 && dist < 3600) {
+      const coneScore = dist * (1 + offBoresight * 0.24);
       if (coneScore < forwardScore) {
         forwardScore = coneScore;
         forwardTarget = enemy;
@@ -2531,7 +2734,7 @@ function updateProjectiles(state: GameState, dt: number) {
       let lockedTarget = state.enemies.find((enemy) => enemy.id === bullet.targetId) ?? chooseMissileTarget(state, missileSeeker);
       if (lockedTarget) {
         const targetBearing = angleTo(bullet, lockedTarget);
-        if (Math.abs(normalizeAngle(targetBearing - currentAngle)) > 2.35 && (bullet.age ?? 0) > 0.45) {
+        if (Math.abs(normalizeAngle(targetBearing - currentAngle)) > 2.72 && (bullet.age ?? 0) > 0.45) {
           lockedTarget = chooseMissileTarget(state, missileSeeker);
         }
       }
@@ -2569,7 +2772,7 @@ function updateProjectiles(state: GameState, dt: number) {
 
     bullet.x += bullet.vx * dt;
     bullet.y += bullet.vy * dt;
-    if (bullet.life <= 0 || distance(bullet, state.player) > (bullet.kind === "missile" ? 2700 : 1900)) {
+    if (bullet.life <= 0 || distance(bullet, state.player) > (bullet.kind === "missile" ? 3300 : 1900)) {
       if (bullet.kind === "missile" && bullet.life <= 0) detonateMissile(state, bullet);
       used.add(bullet.id);
       continue;
@@ -2808,7 +3011,7 @@ function updateTankers(state: GameState, dt: number) {
 
 function spawnForMode(state: GameState) {
   const activeCap = getEnemyActiveCap(state);
-  if (state.mode === "stage") {
+  if (state.mode === "stage" || state.mode === "story") {
     const availableSlots = Math.max(0, activeCap - state.enemies.length);
     if (availableSlots > 0 && state.stageKills + state.enemies.length < state.stageTarget) {
       spawnRegularEnemy(state);
@@ -2849,14 +3052,14 @@ function updateEffects(state: GameState, dt: number) {
 }
 
 function tryCompleteStage(state: GameState) {
-  if (state.mode !== "stage" || state.phase !== "running") return;
+  if ((state.mode !== "stage" && state.mode !== "story") || state.phase !== "running") return;
   const normalDone = state.stageKills >= state.stageTarget;
   if (normalDone && state.enemies.length === 0) {
     state.phase = "stageClear";
     state.bullets = state.bullets.filter((bullet) => bullet.owner !== "enemy");
     state.tankers = [];
     state.shake = Math.max(state.shake, 12);
-    addFloater(state, "关卡完成", state.player.x, state.player.y - 110, "#bef264");
+    addFloater(state, state.mode === "story" ? "任务完成" : "关卡完成", state.player.x, state.player.y - 110, "#bef264");
     if (state.score > state.bestScore) {
       state.bestScore = state.score;
       saveBestScore(state.score);
@@ -3776,7 +3979,8 @@ export default function Home() {
   const gameRef = useRef<GameState | null>(null);
   const keysRef = useRef(new Set<string>());
   const joystickRef = useRef<InputState>({ throttle: 0, turn: 0, firing: false });
-  const mobileFireRef = useRef(false);
+  const mouseFireRef = useRef(false);
+  const touchDeviceRef = useRef(false);
   const spritesRef = useRef<HTMLImageElement | null>(null);
   const weaponSpritesRef = useRef<HTMLImageElement | null>(null);
   const supportSpritesRef = useRef<HTMLImageElement | null>(null);
@@ -3790,6 +3994,7 @@ export default function Home() {
   const [hud, setHud] = useState<HudState>(initialHud);
   const [credits, setCredits] = useState(300);
   const [campaignStage, setCampaignStage] = useState(1);
+  const [storyProgress, setStoryProgress] = useState<StoryProgressState>({ ...defaultStoryProgress });
   const [selectedPlane, setSelectedPlane] = useState<PlaneId>("j8");
   const [planeUpgrades, setPlaneUpgrades] = useState<PlaneUpgradeState>(createDefaultPlaneUpgrades);
   const [unlockedPlanes, setUnlockedPlanes] = useState<PlaneUnlockState>(defaultUnlockedPlanes);
@@ -3838,7 +4043,7 @@ export default function Home() {
     return {
       turn: clamp(keyboard.turn + joystickRef.current.turn, -1, 1),
       throttle: clamp(keyboard.throttle + joystickRef.current.throttle, -1, 1),
-      firing: keys.has("e") || mobileFireRef.current,
+      firing: touchDeviceRef.current || mouseFireRef.current || keys.has("e"),
     };
   }, []);
 
@@ -3876,14 +4081,17 @@ export default function Home() {
 
   useEffect(() => {
     const query = window.matchMedia("(hover: none) and (pointer: coarse)");
-    const updatePointerType = () => setIsTouchDevice(query.matches);
+    const updatePointerType = () => {
+      touchDeviceRef.current = query.matches;
+      setIsTouchDevice(query.matches);
+    };
     updatePointerType();
     query.addEventListener("change", updatePointerType);
     return () => query.removeEventListener("change", updatePointerType);
   }, []);
 
   useEffect(() => {
-    if (phase !== "running" || hud.ammoReserve <= 0) mobileFireRef.current = false;
+    if (phase !== "running" || hud.ammoReserve <= 0) mouseFireRef.current = false;
   }, [hud.ammoReserve, phase]);
 
   useEffect(() => {
@@ -3926,8 +4134,9 @@ export default function Home() {
   }, []);
 
   const startRun = useCallback(
-    (mode: GameMode, stageNumber = campaignStage) => {
-      const safeStage = mode === "stage" ? normalizeStageNumber(stageNumber) : 1;
+    (mode: GameMode, stageNumber = campaignStage, storyFaction: StoryFaction | null = null) => {
+      const safeStoryFaction = storyFaction ?? "usa";
+      const safeStage = mode === "stage" || mode === "story" ? normalizeStageNumber(stageNumber) : 1;
       const safePlane = planeCatalog.some((planeItem) => planeItem.id === selectedPlane) && unlockedPlanes[selectedPlane] ? selectedPlane : getFirstUnlockedPlane(unlockedPlanes);
       const safeUpgrades = sanitizeUpgrades((planeUpgrades[safePlane] ?? defaultUpgrades) as Record<string, unknown>);
       let state: GameState;
@@ -3938,9 +4147,10 @@ export default function Home() {
           safePlane,
           mode,
           safeStage,
+          mode === "story" ? safeStoryFaction : null,
         );
       } catch {
-        state = createGameState(Math.max(readBestScore(), gameRef.current?.bestScore ?? 0), { ...defaultUpgrades }, "j8", mode, 1);
+        state = createGameState(Math.max(readBestScore(), gameRef.current?.bestScore ?? 0), { ...defaultUpgrades }, "j8", mode, 1, mode === "story" ? safeStoryFaction : null);
         addFloater(state, "关卡状态已重置", state.player.x, state.player.y - 90, "#bae6fd");
       }
       const speedStats = getSpeedStats(state.upgrades, state.selectedPlane);
@@ -3963,6 +4173,7 @@ export default function Home() {
   );
 
   const startStageGame = useCallback(() => startRun("stage", campaignStage), [campaignStage, startRun]);
+  const startStoryGame = useCallback((faction: StoryFaction) => startRun("story", storyProgress[faction], faction), [startRun, storyProgress]);
   const startEndlessGame = useCallback(() => {
     if (!isEndlessUnlocked(campaignStage)) {
       setRewardNotice("通关第5关后解锁无尽模式");
@@ -3970,7 +4181,13 @@ export default function Home() {
     }
     startRun("endless");
   }, [campaignStage, startRun]);
-  const startNextStage = useCallback(() => startRun("stage", Math.max(campaignStage, hud.stage + 1)), [campaignStage, hud.stage, startRun]);
+  const startNextStage = useCallback(() => {
+    if (hud.mode === "story" && hud.storyFaction) {
+      startRun("story", Math.max(storyProgress[hud.storyFaction], hud.stage + 1), hud.storyFaction);
+      return;
+    }
+    startRun("stage", Math.max(campaignStage, hud.stage + 1));
+  }, [campaignStage, hud.mode, hud.stage, hud.storyFaction, startRun, storyProgress]);
 
   const returnToMenu = useCallback(() => {
     const state = createGameState(Math.max(readBestScore(), gameRef.current?.bestScore ?? 0), upgrades, selectedPlane);
@@ -4179,6 +4396,7 @@ export default function Home() {
     const storedUpgrades = readPlaneUpgrades();
     const storedUnlocked = readUnlockedPlanes();
     const storedStage = readCampaignStage();
+    const storedStoryProgress = readStoryProgress();
     let storedInventory = readInventory();
     const storedDaily = readDailyCheckin();
     let storedCredits = readCredits();
@@ -4198,6 +4416,7 @@ export default function Home() {
     setDailyCheckin(storedDaily);
     setCredits(storedCredits);
     setCampaignStage(storedStage);
+    setStoryProgress(storedStoryProgress);
     setSelectedPlane(storedPlane);
     if (initialNotice) setRewardNotice(initialNotice);
     const initial = createGameState(readBestScore(), storedUpgrades[storedPlane] ?? defaultUpgrades, storedPlane);
@@ -4226,11 +4445,21 @@ export default function Home() {
           saveCredits(next);
           return next;
         });
-        setCampaignStage((value) => {
-          const next = Math.max(value, state.stage + 1);
-          saveCampaignStage(next);
-          return next;
-        });
+        if (state.mode === "story" && state.storyFaction) {
+          setStoryProgress((value) => {
+            const faction = state.storyFaction as StoryFaction;
+            const nextStage = Math.min(storyCampaigns[faction].length, state.stage + 1);
+            const next = { ...value, [faction]: Math.max(value[faction], nextStage) };
+            saveStoryProgress(next);
+            return next;
+          });
+        } else {
+          setCampaignStage((value) => {
+            const next = Math.max(value, state.stage + 1);
+            saveCampaignStage(next);
+            return next;
+          });
+        }
       }
 
       if (state.phase === "over" && !state.rewardClaimed) {
@@ -4325,13 +4554,14 @@ export default function Home() {
     setJoystick({ x: 0, y: 0, active: false });
   }, []);
 
-  const startMobileCannon = useCallback((event: React.PointerEvent<HTMLButtonElement>) => {
+  const startMouseCannon = useCallback((event: React.PointerEvent<HTMLCanvasElement>) => {
+    if (event.pointerType === "touch" || event.button !== 0) return;
     event.currentTarget.setPointerCapture(event.pointerId);
-    mobileFireRef.current = true;
+    mouseFireRef.current = true;
   }, []);
 
-  const stopMobileCannon = useCallback(() => {
-    mobileFireRef.current = false;
+  const stopMouseCannon = useCallback(() => {
+    mouseFireRef.current = false;
   }, []);
 
   const plane = getPlaneMeta(selectedPlane);
@@ -4358,6 +4588,8 @@ export default function Home() {
       : nextDailyDay === 4
         ? `${formatReward(nextDailyReward)}、随机飞机蓝图`
         : formatReward(nextDailyReward);
+  const usaStoryMission = getStoryMission("usa", storyProgress.usa);
+  const japanStoryMission = getStoryMission("japan", storyProgress.japan);
   const homeTabs: { id: HomeTab; label: string }[] = [
     { id: "battle", label: "战斗" },
     { id: "upgrade", label: "升级" },
@@ -4391,8 +4623,8 @@ export default function Home() {
   const tutorialText =
     tutorialPrompt === "controls"
       ? isTouchDevice
-        ? "用左下角摇杆操控战机，右下角按钮发射机炮、导弹和呼叫加油机。"
-        : "用 WASD 操控战机：E 按住机炮，Q 导弹，T 呼叫加油机。"
+        ? "用左下角摇杆操控战机，机炮会自动开火，右下角按钮释放导弹和呼叫加油机。"
+        : "用 WASD 操控战机：按住鼠标左键发射机炮，Q 导弹，T 呼叫加油机。"
       : tutorialPrompt === "missile"
         ? isTouchDevice
           ? "导弹按钮在这里。"
@@ -4411,6 +4643,10 @@ export default function Home() {
             width={VIEW_WIDTH}
             height={VIEW_HEIGHT}
             aria-label="无限空战画面"
+            onPointerDown={startMouseCannon}
+            onPointerUp={stopMouseCannon}
+            onPointerCancel={stopMouseCannon}
+            onLostPointerCapture={stopMouseCannon}
           />
 
           {showBattleUi && (
@@ -4437,8 +4673,8 @@ export default function Home() {
 
               <div className="hud-strip" aria-live="polite">
                 <div>
-                  <span>{hud.mode === "stage" ? `第 ${hud.stage} 关` : "分数"}</span>
-                  <strong>{hud.mode === "stage" ? `${hud.stageKills}/${hud.stageTarget}` : hud.score}</strong>
+                  <span>{hud.mode === "story" ? `第 ${hud.stage} 章` : hud.mode === "stage" ? `第 ${hud.stage} 关` : "分数"}</span>
+                  <strong>{hud.mode === "story" || hud.mode === "stage" ? `${hud.stageKills}/${hud.stageTarget}` : hud.score}</strong>
                 </div>
                 <div>
                   <span>速度</span>
@@ -4449,6 +4685,16 @@ export default function Home() {
                   <strong>{hud.allies}</strong>
                 </div>
               </div>
+
+              {hud.mode === "story" && hud.missionTitle && (
+                <div className="mission-brief" key={`${hud.storyFaction}-${hud.stage}`} aria-label="剧情任务简报">
+                  <span>
+                    {getStoryFactionLabel(hud.storyFaction ?? "usa")} · {hud.missionYear} · {hud.missionTheatre}
+                  </span>
+                  <strong>{hud.missionTitle}</strong>
+                  <em>{hud.missionObjective}</em>
+                </div>
+              )}
 
               <div className="engine-panel" aria-label="发动机状态">
                 <div>
@@ -4525,6 +4771,18 @@ export default function Home() {
                     <button className="secondary-action mode-action" type="button" onClick={startEndlessGame} disabled={!endlessUnlocked}>
                       <span>无尽模式</span>
                       <small>{endlessUnlocked ? "开放空域 · 持续追击" : "通关第5关解锁"}</small>
+                    </button>
+                    <button className="secondary-action mode-action story-action" type="button" onClick={() => startStoryGame("usa")}>
+                      <span>美国剧情</span>
+                      <small>
+                        第 {storyProgress.usa} 章 · {usaStoryMission.title}
+                      </small>
+                    </button>
+                    <button className="secondary-action mode-action story-action" type="button" onClick={() => startStoryGame("japan")}>
+                      <span>日本剧情</span>
+                      <small>
+                        第 {storyProgress.japan} 章 · {japanStoryMission.title}
+                      </small>
                     </button>
                   </div>
                 </>
@@ -4718,8 +4976,18 @@ export default function Home() {
                     </div>
                   </div>
                   <div className="panel-actions">
-                    <button className="primary-action" type="button" onClick={() => (hud.mode === "stage" ? startRun("stage", hud.stage) : startEndlessGame())}>
-                      {hud.mode === "stage" ? "重试关卡" : "再次出击"}
+                    <button
+                      className="primary-action"
+                      type="button"
+                      onClick={() =>
+                        hud.mode === "story" && hud.storyFaction
+                          ? startRun("story", hud.stage, hud.storyFaction)
+                          : hud.mode === "stage"
+                            ? startRun("stage", hud.stage)
+                            : startEndlessGame()
+                      }
+                    >
+                      {hud.mode === "story" ? "重试任务" : hud.mode === "stage" ? "重试关卡" : "再次出击"}
                     </button>
                     <button className="secondary-action" type="button" onClick={openHangar}>
                       进入机库
@@ -4733,8 +5001,8 @@ export default function Home() {
 
               {showStageClear && (
                 <>
-                  <p>关卡完成</p>
-                  <h1>第 {hud.stage} 关胜利</h1>
+                  <p>{hud.mode === "story" ? "任务完成" : "关卡完成"}</p>
+                  <h1>{hud.mode === "story" ? `${hud.missionTitle} 完成` : `第 ${hud.stage} 关胜利`}</h1>
                   <div className="hangar-summary">
                     <div>
                       <span>分数</span>
@@ -4745,13 +5013,13 @@ export default function Home() {
                       <strong>+{hud.earnedCredits || hud.stageReward}</strong>
                     </div>
                     <div>
-                      <span>下一关</span>
+                      <span>{hud.mode === "story" ? "下一章" : "下一关"}</span>
                       <strong>{hud.stage + 1}</strong>
                     </div>
                   </div>
                   <div className="panel-actions">
                     <button className="primary-action" type="button" onClick={startNextStage}>
-                      下一关
+                      {hud.mode === "story" ? "下一章" : "下一关"}
                     </button>
                     <button className="secondary-action" type="button" onClick={openHangar}>
                       进入机库
@@ -4798,17 +5066,6 @@ export default function Home() {
                 </div>
               </div>
               <div className="action-cluster">
-                <button
-                  className="cannon-action"
-                  type="button"
-                  onPointerDown={startMobileCannon}
-                  onPointerUp={stopMobileCannon}
-                  onPointerCancel={stopMobileCannon}
-                  onLostPointerCapture={stopMobileCannon}
-                  disabled={hud.ammoReserve <= 0}
-                >
-                  机炮
-                </button>
                 <button className="tanker-action" type="button" onClick={callTanker} disabled={hud.tankerCallsLeft <= 0}>
                   加油
                 </button>

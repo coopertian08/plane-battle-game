@@ -34,6 +34,8 @@ test("server-renders the plane battle game shell", async () => {
   assert.match(html, /飞机大战/);
   assert.match(html, /关卡出击/);
   assert.match(html, /无尽模式/);
+  assert.match(html, /美国剧情/);
+  assert.match(html, /日本剧情/);
   assert.match(html, /战斗/);
   assert.match(html, /升级/);
   assert.match(html, /商店/);
@@ -114,7 +116,8 @@ test("keeps the finished game free of starter preview code", async () => {
   assert.match(page, /SPRITE_ROWS = 3/);
   assert.match(page, /type PlaneId = \(typeof PLANE_IDS\)\[number\]/);
   assert.match(page, /type PlaneFaction = \(typeof FACTION_IDS\)\[number\]/);
-  assert.match(page, /type GameMode = "endless" \| "stage"/);
+  assert.match(page, /type GameMode = "endless" \| "stage" \| "story"/);
+  assert.match(page, /type StoryFaction = "usa" \| "japan"/);
   assert.match(page, /type UpgradeKey = "firepower" \| "missiles" \| "armor" \| "fuelTank" \| "engine" \| "speed" \| "tanker" \| "ammo"/);
   assert.match(page, /type EnemyKind = "scout" \| "fighter" \| "heavy" \| "stealth" \| "tank"/);
   assert.match(page, /type PlaneUpgradeState/);
@@ -123,6 +126,7 @@ test("keeps the finished game free of starter preview code", async () => {
   assert.match(page, /INVENTORY_KEY/);
   assert.match(page, /DAILY_CHECKIN_KEY/);
   assert.match(page, /CAMPAIGN_STAGE_KEY/);
+  assert.match(page, /STORY_PROGRESS_KEY/);
   assert.match(page, /UNLOCKED_PLANES_KEY/);
   assert.match(page, /GAME_VERSION = "1\.01"/);
   assert.match(page, /SAVE_SCHEMA_VERSION = "1\.0"/);
@@ -137,13 +141,23 @@ test("keeps the finished game free of starter preview code", async () => {
   assert.match(page, /type TutorialKey = "controls" \| "missile" \| "refuel"/);
   assert.match(page, /readTutorialProgress/);
   assert.match(page, /saveTutorialProgress/);
+  assert.match(page, /defaultStoryProgress/);
+  assert.match(page, /storyCampaigns/);
+  assert.match(page, /readStoryProgress/);
+  assert.match(page, /saveStoryProgress/);
+  assert.match(page, /title:\s*"战争前夕"/);
+  assert.match(page, /title:\s*"珍珠港防空"/);
+  assert.match(page, /title:\s*"珍珠港突袭"/);
+  assert.match(page, /title:\s*"中途岛反击"/);
+  assert.match(page, /objective:\s*"突破护航机群，摧毁敌方航母甲板航空力量。"/);
   assert.match(page, /showTutorial/);
   assert.match(page, /dismissTutorial/);
   assert.match(page, /maybeShowContextTutorial/);
   assert.match(page, /setIsTouchDevice/);
   assert.match(page, /matchMedia\("\(hover: none\) and \(pointer: coarse\)"\)/);
   assert.match(page, /用 WASD 操控战机/);
-  assert.match(page, /E 按住机炮/);
+  assert.match(page, /按住鼠标左键发射机炮/);
+  assert.match(page, /机炮会自动开火/);
   assert.match(page, /用左下角摇杆操控战机/);
   assert.match(page, /按 Q 键释放追踪导弹/);
   assert.match(page, /按 T 键呼叫加油机/);
@@ -230,6 +244,8 @@ test("keeps the finished game free of starter preview code", async () => {
   assert.match(page, /getMaxFuel/);
   assert.match(page, /getMagazineSize/);
   assert.match(page, /getMaxCannonAmmo/);
+  assert.match(page, /getPlayerFireInterval/);
+  assert.match(page, /0\.112 - tier \* 0\.0055/);
   assert.match(page, /upgrades\.ammo \* 240/);
   assert.match(page, /getSpeedStats/);
   assert.match(page, /key:\s*"missiles"/);
@@ -245,7 +261,7 @@ test("keeps the finished game free of starter preview code", async () => {
   assert.match(page, /getGunPorts/);
   assert.match(page, /getMissileRackPort/);
   assert.match(page, /chooseMissileTarget/);
-  assert.match(page, /offBoresight < 1\.85/);
+  assert.match(page, /offBoresight < 2\.45 && dist < 3600/);
   assert.match(page, /fireMissile/);
   assert.match(page, /missileAmmo:\s*4 \+ upgrades\.missiles \* 2/);
   assert.match(page, /ammoReserve:\s*maxAmmoReserve/);
@@ -258,6 +274,7 @@ test("keeps the finished game free of starter preview code", async () => {
   assert.match(page, /missileTimer/);
   assert.match(page, /blastRadius/);
   assert.match(page, /turnRate:\s*3\.8/);
+  assert.match(page, /life:\s*4\.8/);
   assert.match(page, /missileSeeker/);
   assert.match(page, /delete bullet\.targetId/);
   assert.match(page, /boostLock = clamp/);
@@ -293,8 +310,10 @@ test("keeps the finished game free of starter preview code", async () => {
   assert.match(page, /keys\.has\("a"\)/);
   assert.match(page, /keys\.has\("d"\)/);
   assert.match(page, /keys\.has\("e"\)/);
-  assert.match(page, /mobileFireRef/);
-  assert.match(page, /firing:\s*keys\.has\("e"\) \|\| mobileFireRef\.current/);
+  assert.match(page, /mouseFireRef/);
+  assert.match(page, /touchDeviceRef/);
+  assert.match(page, /firing:\s*touchDeviceRef\.current \|\| mouseFireRef\.current \|\| keys\.has\("e"\)/);
+  assert.match(page, /onPointerDown=\{startMouseCannon\}/);
   assert.match(page, /joystickRef\.current/);
   assert.match(page, /throttle/);
   assert.match(page, /turn/);
@@ -365,6 +384,11 @@ test("keeps the finished game free of starter preview code", async () => {
   assert.match(page, /normalizeStageNumber/);
   assert.match(page, /function isEndlessUnlocked\(stage: number\)/);
   assert.match(page, /normalizeStageNumber\(stage\) > 5/);
+  assert.match(page, /function getStoryMission\(faction: StoryFaction, stage: number\)/);
+  assert.match(page, /function getStoryFactionLabel\(faction: StoryFaction\)/);
+  assert.match(page, /storyMission \? storyMission\.target/);
+  assert.match(page, /storyMission \? storyMission\.reward/);
+  assert.match(page, /storyMission \? storyMission\.difficulty/);
   assert.match(page, /getStageTarget/);
   assert.match(page, /getStageWingmen/);
   assert.match(page, /function getEnemyActiveCap\(state: GameState\)/);
@@ -373,7 +397,7 @@ test("keeps the finished game free of starter preview code", async () => {
   assert.match(page, /state\.stage >= 5/);
   assert.match(page, /return 5 \+ Math\.min\(3, Math\.floor\(state\.score \/ 9000\)\)/);
   assert.match(page, /function getSpawnInterval\(state: GameState\)/);
-  assert.match(page, /const wingmen = mode === "stage" \? getStageWingmen\(stage\) : 5/);
+  assert.match(page, /const wingmen = mode === "story" \? Math\.max\(2, getStageWingmen/);
   assert.match(page, /150 \+ Math\.max\(0, stage - 1\) \* 50/);
   assert.match(page, /stageKills/);
   assert.match(page, /spawnRegularEnemy/);
@@ -387,6 +411,7 @@ test("keeps the finished game free of starter preview code", async () => {
   assert.doesNotMatch(page, /enemy\.x \+= escape\.x \* push/);
   assert.doesNotMatch(page, /enemy\.y \+= escape\.y \* push/);
   assert.match(page, /startStageGame/);
+  assert.match(page, /startStoryGame/);
   assert.match(page, /safeStage/);
   assert.match(page, /关卡状态已重置/);
   assert.match(page, /startEndlessGame/);
@@ -395,6 +420,8 @@ test("keeps the finished game free of starter preview code", async () => {
   assert.match(page, /通关第5关解锁/);
   assert.match(page, /startNextStage/);
   assert.match(page, /saveCampaignStage/);
+  assert.match(page, /setStoryProgress/);
+  assert.match(page, /saveStoryProgress\(next\)/);
   assert.match(page, /type GamePhase = "menu" \| "hangar" \| "takeoff"/);
   assert.match(page, /updateTakeoff/);
   assert.match(page, /state\.phase = "takeoff"/);
@@ -464,6 +491,9 @@ test("keeps the finished game free of starter preview code", async () => {
   assert.match(css, /battle-hp/);
   assert.doesNotMatch(css, /boss-hp|boss-meter/);
   assert.match(css, /mode-actions/);
+  assert.match(css, /story-action/);
+  assert.match(css, /mission-brief/);
+  assert.match(css, /mission-brief-fade/);
   assert.match(css, /pointer:\s*coarse/);
   assert.match(css, /place-items:\s*center/);
   assert.match(css, /engine-panel/);
@@ -476,7 +506,7 @@ test("keeps the finished game free of starter preview code", async () => {
   assert.match(css, /radar-blip\.enemy/);
   assert.match(css, /fuel-meter/);
   assert.match(css, /ammo-meter/);
-  assert.match(css, /cannon-action/);
+  assert.doesNotMatch(page, /className="cannon-action"/);
   assert.match(css, /joystick-zone/);
   assert.match(css, /plane-preview/);
   assert.match(css, /menu-panel/);
