@@ -38,6 +38,18 @@ const DAILY_CHECKIN_KEY = "plane-battle-daily-checkin";
 const PLANE_KEY = "plane-battle-selected-plane";
 const UNLOCKED_PLANES_KEY = "plane-battle-unlocked-planes";
 const CAMPAIGN_STAGE_KEY = "plane-battle-campaign-stage";
+const GAME_VERSION = "1.0";
+const SAVE_VERSION_KEY = "plane-battle-save-version";
+const RESETTABLE_SAVE_KEYS = [
+  BEST_SCORE_KEY,
+  CREDITS_KEY,
+  UPGRADES_KEY,
+  INVENTORY_KEY,
+  DAILY_CHECKIN_KEY,
+  PLANE_KEY,
+  UNLOCKED_PLANES_KEY,
+  CAMPAIGN_STAGE_KEY,
+] as const;
 
 type GamePhase = "menu" | "hangar" | "takeoff" | "running" | "paused" | "playerDying" | "over" | "stageClear";
 type GameMode = "endless" | "stage";
@@ -1176,6 +1188,16 @@ function readBestScore() {
   if (typeof window === "undefined") return 0;
   const stored = Number(window.localStorage.getItem(BEST_SCORE_KEY));
   return Number.isFinite(stored) ? stored : 0;
+}
+
+function ensureSaveVersion() {
+  if (typeof window === "undefined") return false;
+  if (window.localStorage.getItem(SAVE_VERSION_KEY) === GAME_VERSION) return false;
+  for (const key of RESETTABLE_SAVE_KEYS) {
+    window.localStorage.removeItem(key);
+  }
+  window.localStorage.setItem(SAVE_VERSION_KEY, GAME_VERSION);
+  return true;
 }
 
 function saveBestScore(score: number) {
@@ -3961,19 +3983,21 @@ export default function Home() {
   }, [syncHud]);
 
   useEffect(() => {
+    const versionReset = ensureSaveVersion();
     const storedUpgrades = readPlaneUpgrades();
     const storedUnlocked = readUnlockedPlanes();
     const storedStage = readCampaignStage();
     let storedInventory = readInventory();
     const storedDaily = readDailyCheckin();
     let storedCredits = readCredits();
+    let initialNotice = versionReset ? `1.0版本已重置：仅保留三国初始战机` : "";
     const duplicateSettlement = convertUnlockedPlaneBlueprints(storedInventory, storedUnlocked);
     if ((duplicateSettlement.reward.credits ?? 0) > 0 || (duplicateSettlement.reward.materials ?? 0) > 0) {
       storedInventory = duplicateSettlement.inventory;
       storedCredits += Math.max(0, Math.floor(duplicateSettlement.reward.credits ?? 0));
       saveInventory(storedInventory);
       saveCredits(storedCredits);
-      setRewardNotice(`重复蓝图已转换：${formatReward(duplicateSettlement.reward)}`);
+      initialNotice = `重复蓝图已转换：${formatReward(duplicateSettlement.reward)}`;
     }
     const storedPlane = readSelectedPlane(storedUnlocked);
     setPlaneUpgrades(storedUpgrades);
@@ -3983,6 +4007,7 @@ export default function Home() {
     setCredits(storedCredits);
     setCampaignStage(storedStage);
     setSelectedPlane(storedPlane);
+    if (initialNotice) setRewardNotice(initialNotice);
     const initial = createGameState(readBestScore(), storedUpgrades[storedPlane] ?? defaultUpgrades, storedPlane);
     gameRef.current = initial;
     setHud(snapshot(initial));
@@ -4240,7 +4265,7 @@ export default function Home() {
             <div className={["start-panel", showMainMenu ? "menu-panel" : "", showHangar ? "hangar-panel" : ""].filter(Boolean).join(" ")}>
               {showMainMenu && (
                 <>
-                  <p>无限空战</p>
+                  <p>无限空战 · {GAME_VERSION}版本</p>
                   <h1>飞机大战</h1>
                   <div className="main-plane-summary">
                     <div className={getPlanePreviewClass(selectedPlane)} aria-hidden="true">

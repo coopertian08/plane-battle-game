@@ -29,7 +29,7 @@ test("server-renders the plane battle game shell", async () => {
   assert.match(response.headers.get("content-type") ?? "", /^text\/html\b/i);
 
   const html = await response.text();
-  assert.match(html, /<title>飞机大战<\/title>/i);
+  assert.match(html, /<title>飞机大战 1\.0<\/title>/i);
   assert.match(html, /<canvas/i);
   assert.match(html, /飞机大战/);
   assert.match(html, /关卡出击/);
@@ -51,7 +51,7 @@ test("server-renders the plane battle game shell", async () => {
 });
 
 test("keeps the finished game free of starter preview code", async () => {
-  const [css, page, layout, packageJson, exportScript, pagesWorkflow, sprites, weaponSprites, supportSprites, terrainTile, airportRunway] = await Promise.all([
+  const [css, page, layout, packageJson, exportScript, pagesWorkflow, sprites, j20Cutout, j20Source, weaponSprites, supportSprites, terrainTile, airportRunway] = await Promise.all([
     readFile(new URL("../app/globals.css", import.meta.url), "utf8"),
     readFile(new URL("../app/page.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/layout.tsx", import.meta.url), "utf8"),
@@ -59,6 +59,8 @@ test("keeps the finished game free of starter preview code", async () => {
     readFile(new URL("../scripts/export-github-pages.mjs", import.meta.url), "utf8"),
     readFile(new URL("../.github/workflows/pages.yml", import.meta.url), "utf8"),
     readFile(new URL("../public/aircraft-sprites.png", import.meta.url)),
+    readFile(new URL("../public/j20-cutout.png", import.meta.url)),
+    readFile(new URL("../public/j20-generated-source.png", import.meta.url)),
     readFile(new URL("../public/weapon-sprites.png", import.meta.url)),
     readFile(new URL("../public/support-sprites.png", import.meta.url)),
     readFile(new URL("../public/terrain-tile.png", import.meta.url)),
@@ -68,6 +70,8 @@ test("keeps the finished game free of starter preview code", async () => {
   assert.match(page, /VIEW_WIDTH = 1280/);
   assert.match(page, /VIEW_HEIGHT = 800/);
   assert.ok(sprites.length > 100_000);
+  assert.ok(j20Cutout.length > 50_000);
+  assert.ok(j20Source.length > 100_000);
   assert.ok(weaponSprites.length > 50_000);
   assert.ok(supportSprites.length > 50_000);
   assert.ok(terrainTile.length > 100_000);
@@ -120,6 +124,12 @@ test("keeps the finished game free of starter preview code", async () => {
   assert.match(page, /DAILY_CHECKIN_KEY/);
   assert.match(page, /CAMPAIGN_STAGE_KEY/);
   assert.match(page, /UNLOCKED_PLANES_KEY/);
+  assert.match(page, /GAME_VERSION = "1\.0"/);
+  assert.match(page, /SAVE_VERSION_KEY = "plane-battle-save-version"/);
+  assert.match(page, /RESETTABLE_SAVE_KEYS/);
+  assert.match(page, /function ensureSaveVersion/);
+  assert.match(page, /window\.localStorage\.removeItem\(key\)/);
+  assert.match(page, /1\.0版本已重置/);
   assert.match(page, /planeCatalog/);
   assert.match(page, /label:\s*"歼-7G"/);
   assert.match(page, /label:\s*"歼-8II"/);
@@ -381,6 +391,8 @@ test("keeps the finished game free of starter preview code", async () => {
   assert.match(page, /美国战斗机/);
   assert.match(page, /俄罗斯战斗机/);
   assert.match(page, /visibleBlueprintPlaneIds/);
+  assert.match(page, /!unlockedPlanes\[planeId\] && inventory\.planeBlueprints\[planeId\] > 0/);
+  assert.match(page, /unlockedPlanes\[item\.id\] \|\| inventory\.planeBlueprints\[item\.id\] > 0/);
   assert.match(page, /出击时随机对阵/);
   assert.doesNotMatch(page, /<aside/);
   assert.doesNotMatch(page, /cockpit-panel/);
@@ -391,7 +403,7 @@ test("keeps the finished game free of starter preview code", async () => {
   assert.doesNotMatch(page, /爆弹/);
   assert.doesNotMatch(page, /lives/);
   assert.doesNotMatch(page, /arrowleft|arrowright|arrowup|arrowdown/);
-  assert.match(layout, /title:\s*"飞机大战"/);
+  assert.match(layout, /title:\s*"飞机大战 1\.0"/);
   assert.match(layout, /export const viewport/);
   assert.match(layout, /width:\s*"device-width"/);
   assert.match(layout, /initialScale:\s*1/);
@@ -464,6 +476,7 @@ test("keeps the finished game free of starter preview code", async () => {
   assert.match(css, /warehouse-grid/);
   assert.match(css, /warehouse-empty/);
   assert.match(css, /plane-card\.locked/);
+  assert.match(packageJson, /"version": "1\.0\.0"/);
   assert.match(packageJson, /"export:github-pages": "node scripts\/export-github-pages\.mjs"/);
   assert.match(exportScript, /dist", "github-pages"/);
   assert.match(exportScript, /GITHUB_REPOSITORY/);
