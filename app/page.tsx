@@ -1176,17 +1176,18 @@ function getStageWingmen(stage: number) {
 
 function getEnemyActiveCap(state: GameState) {
   if (state.mode === "stage") {
-    if (state.stage >= 12) return 9;
-    if (state.stage >= 7) return 8;
-    return 7;
+    if (state.stage >= 15) return 8;
+    if (state.stage >= 9) return 7;
+    if (state.stage >= 5) return 6;
+    return 5;
   }
 
-  return 7 + Math.min(3, Math.floor(state.score / 8500));
+  return 5 + Math.min(3, Math.floor(state.score / 9000));
 }
 
 function getSpawnInterval(state: GameState) {
-  if (state.mode === "stage") return Math.max(1.05, 1.78 - state.difficulty * 0.045);
-  return Math.max(0.82, 1.34 - state.difficulty * 0.034);
+  if (state.mode === "stage") return Math.max(1.16, 1.95 - state.difficulty * 0.04);
+  return Math.max(0.92, 1.48 - state.difficulty * 0.03);
 }
 
 function getMaxHp(upgrades: UpgradeState, planeId: PlaneId) {
@@ -1234,11 +1235,6 @@ function getAircraftRenderScale(aircraft: Aircraft) {
     x: 1 - bank * 0.04,
     y: 1 + bank * 0.018,
   };
-}
-
-function localToRenderedWorld(aircraft: Aircraft, localX: number, localY: number) {
-  const scale = getAircraftRenderScale(aircraft);
-  return localToWorld(aircraft, localX * scale.x, localY * scale.y);
 }
 
 function getVisualLaunchAngle(aircraft: Aircraft, extraAngle = 0) {
@@ -2156,17 +2152,17 @@ function updateEnemies(state: GameState, dt: number) {
       y: trailPoint.y + separation.y * 220,
     };
     const stationDist = distance(enemy, separatedTrailPoint);
-    const safeRange = Math.max(target.radius + enemy.radius + 150, preferred * 0.46);
-    const cautionRange = preferred * 0.62;
+    const safeRange = Math.max(target.radius + enemy.radius + 220, preferred * 0.56);
+    const cautionRange = preferred * 0.82;
     const fireRange = heavyEnemy ? 1180 : enemy.kind === "stealth" ? 1120 : 1060;
-    const closingOnTarget = Math.cos(normalizeAngle(targetAngle - enemy.angle)) > 0.42;
+    const closingOnTarget = Math.cos(normalizeAngle(targetAngle - enemy.angle)) > 0.18;
     const tooClose = dist < safeRange;
     const shouldOpenDistance = tooClose || (dist < cautionRange && closingOnTarget);
     const nearStation = stationDist < 220;
     const inAttackWindow = dist > safeRange * 1.05 && dist < fireRange;
     const shouldChase = dist > preferred * 1.34 || stationDist > 620;
     const escapeSide = ((enemy.wingSlot ?? enemy.id) % 2 === 0 ? 1 : -1);
-    const escapeAngle = normalizeAngle(targetAngle + Math.PI + escapeSide * (tooClose ? 0.52 : 0.32) + weave * 0.18);
+    const escapeAngle = normalizeAngle(targetAngle + Math.PI + escapeSide * (tooClose ? 0.92 : 0.58) + weave * 0.22);
     let desiredAngle = shouldOpenDistance
       ? escapeAngle
       : shouldChase
@@ -2178,7 +2174,8 @@ function updateEnemies(state: GameState, dt: number) {
       desiredAngle = turnToward(desiredAngle, Math.atan2(separation.y, separation.x), clamp(separationForce * 0.42, 0, 0.36));
     }
     enemy.bank = (enemy.bank ?? 0) + (clamp(normalizeAngle(desiredAngle - enemy.angle) * 1.6, -1, 1) - (enemy.bank ?? 0)) * Math.min(1, dt * 4);
-    enemy.angle = turnToward(enemy.angle, desiredAngle, turnRate * dt);
+    const turnAuthority = shouldOpenDistance ? turnRate * 1.28 : turnRate;
+    enemy.angle = turnToward(enemy.angle, desiredAngle, turnAuthority * dt);
     const warmingUp = (enemy.spawnWarmup ?? 0) > 0;
     const arrival = warmingUp ? 0.34 : 1;
     const maxEnemySpeed = enemy.kind === "stealth" ? 390 + state.difficulty * 5 : heavyEnemy ? 328 + state.difficulty * 4 : 352 + state.difficulty * 5;
@@ -2186,20 +2183,14 @@ function updateEnemies(state: GameState, dt: number) {
     const chaseSpeed = clamp(target.speed + 72 + Math.max(0, dist - preferred) * 0.08, minEnemySpeed, maxEnemySpeed);
     const attackSpeed = clamp(target.speed * 0.96 + (dist - preferred) * 0.11, minEnemySpeed, maxEnemySpeed);
     const holdSpeed = clamp(target.speed * 0.9 + (nearStation ? -6 : stationDist * 0.08), minEnemySpeed, maxEnemySpeed);
-    const retreatSpeed = clamp(target.speed + 92 + (safeRange - Math.min(dist, safeRange)) * 0.18, minEnemySpeed, maxEnemySpeed);
+    const retreatSpeed = clamp(target.speed + 128 + (safeRange - Math.min(dist, safeRange)) * 0.24, minEnemySpeed, maxEnemySpeed);
     const speedTarget = (shouldOpenDistance ? retreatSpeed : shouldChase ? chaseSpeed : inAttackWindow ? attackSpeed : holdSpeed) * arrival;
-    enemy.speed += (speedTarget - enemy.speed) * dt * (shouldOpenDistance ? 0.82 : 0.45);
+    enemy.speed += (speedTarget - enemy.speed) * dt * (shouldOpenDistance ? 1.04 : 0.45);
     enemy.speed = clamp(enemy.speed, minEnemySpeed, maxEnemySpeed);
     enemy.throttle = clamp((speedTarget - enemy.speed) / 160, -0.2, 1);
     const dir = direction(enemy.angle);
     enemy.x += dir.x * enemy.speed * dt;
     enemy.y += dir.y * enemy.speed * dt;
-    if (dist < safeRange * 0.78) {
-      const escape = direction(targetAngle + Math.PI);
-      const push = (safeRange * 0.78 - dist) * dt * 2.8;
-      enemy.x += escape.x * push;
-      enemy.y += escape.y * push;
-    }
     enemy.fireTimer -= dt;
     updateEnemyBurst(state, enemy, dt);
 
@@ -2627,48 +2618,48 @@ const singleEnginePorts: Partial<Record<PlaneId, EnginePort[]>> = {
 
 const twinEnginePorts: Partial<Record<PlaneId, EnginePort[]>> = {
   j8: [
-    { x: -0.026, y: 0.42 },
-    { x: 0.026, y: 0.42 },
+    { x: -0.024, y: 0.414, widthScale: 0.42, lengthScale: 0.88 },
+    { x: 0.024, y: 0.414, widthScale: 0.42, lengthScale: 0.88 },
   ],
   j11: [
-    { x: -0.055, y: 0.37 },
-    { x: 0.055, y: 0.37 },
+    { x: -0.034, y: 0.378, widthScale: 0.5 },
+    { x: 0.034, y: 0.378, widthScale: 0.5 },
   ],
   j15: [
-    { x: -0.048, y: 0.365 },
-    { x: 0.048, y: 0.365 },
+    { x: -0.032, y: 0.374, widthScale: 0.5 },
+    { x: 0.032, y: 0.374, widthScale: 0.5 },
   ],
   j16: [
-    { x: -0.055, y: 0.385 },
-    { x: 0.055, y: 0.385 },
+    { x: -0.035, y: 0.394, widthScale: 0.5 },
+    { x: 0.035, y: 0.394, widthScale: 0.5 },
   ],
   j20: [
-    { x: -0.05, y: 0.395 },
-    { x: 0.05, y: 0.395 },
+    { x: -0.029, y: 0.372, widthScale: 0.5 },
+    { x: 0.029, y: 0.372, widthScale: 0.5 },
   ],
   j35: [
-    { x: -0.044, y: 0.39 },
-    { x: 0.044, y: 0.39 },
+    { x: -0.024, y: 0.392, widthScale: 0.48 },
+    { x: 0.024, y: 0.392, widthScale: 0.48 },
   ],
   f18: [
-    { x: -0.046, y: 0.235 },
-    { x: 0.046, y: 0.235 },
+    { x: -0.033, y: 0.244, widthScale: 0.5 },
+    { x: 0.033, y: 0.244, widthScale: 0.5 },
   ],
   f14: [
-    { x: -0.055, y: 0.205 },
-    { x: 0.055, y: 0.205 },
+    { x: -0.042, y: 0.218, widthScale: 0.5 },
+    { x: 0.042, y: 0.218, widthScale: 0.5 },
   ],
   f15: [
-    { x: -0.054, y: 0.265 },
-    { x: 0.054, y: 0.265 },
+    { x: -0.036, y: 0.274, widthScale: 0.5 },
+    { x: 0.036, y: 0.274, widthScale: 0.5 },
   ],
   f117: [
-    { x: -0.046, y: 0.19, widthScale: 0.5, lengthScale: 0.82 },
-    { x: 0.046, y: 0.19, widthScale: 0.5, lengthScale: 0.82 },
+    { x: -0.038, y: 0.212, widthScale: 0.46, lengthScale: 0.78 },
+    { x: 0.038, y: 0.212, widthScale: 0.46, lengthScale: 0.78 },
   ],
   f22: [
-    { x: -0.052, y: 0.255 },
-    { x: 0.052, y: 0.255 },
+    { x: -0.032, y: 0.265, widthScale: 0.5 },
+    { x: 0.032, y: 0.265, widthScale: 0.5 },
   ],
 };
 
@@ -2702,65 +2693,53 @@ function getEnginePorts(aircraft: Aircraft): EnginePort[] {
 
 function drawEngineFlame(
   ctx: CanvasRenderingContext2D,
-  state: GameState,
   aircraft: Aircraft,
   port: EnginePort,
   size: number,
   turnBoost: number,
-  spawnAlpha: number,
+  baseAlpha: number,
 ) {
   const throttle = aircraft.throttle ?? 0;
   const thrust = clamp(0.28 + Math.max(0, throttle) * 0.72 + turnBoost, 0.14, 1.18);
   const length = size * (0.14 + thrust * 0.22) * (port.lengthScale ?? 1);
   const width = size * (0.036 + thrust * 0.022) * (port.widthScale ?? 1);
-  const forward = direction(aircraft.angle);
-  const back = { x: -forward.x, y: -forward.y };
-  const perp = { x: -forward.y, y: forward.x };
-  const base = localToRenderedWorld(aircraft, port.x, port.y);
-  const baseScreen = screenPoint(state, base.x, base.y);
-  const tipScreen = screenPoint(state, base.x + back.x * length, base.y + back.y * length);
-  const leftBase = screenPoint(state, base.x + perp.x * width * 0.3, base.y + perp.y * width * 0.3);
-  const rightBase = screenPoint(state, base.x - perp.x * width * 0.3, base.y - perp.y * width * 0.3);
-  const leftMid = screenPoint(state, base.x + back.x * length * 0.58 + perp.x * width * 0.74, base.y + back.y * length * 0.58 + perp.y * width * 0.74);
-  const rightMid = screenPoint(state, base.x + back.x * length * 0.58 - perp.x * width * 0.74, base.y + back.y * length * 0.58 - perp.y * width * 0.74);
-  const coreLeftBase = screenPoint(state, base.x + perp.x * width * 0.16, base.y + perp.y * width * 0.16);
-  const coreRightBase = screenPoint(state, base.x - perp.x * width * 0.16, base.y - perp.y * width * 0.16);
-  const coreTip = screenPoint(state, base.x + back.x * length * 0.58, base.y + back.y * length * 0.58);
+  const baseX = port.x;
+  const baseY = port.y;
+  const tipY = baseY + length;
 
   ctx.save();
   ctx.globalCompositeOperation = "lighter";
-  ctx.globalAlpha = spawnAlpha * (0.34 + thrust * 0.34);
-  const gradient = ctx.createLinearGradient(baseScreen.x, baseScreen.y, tipScreen.x, tipScreen.y);
+  ctx.globalAlpha = baseAlpha * (0.34 + thrust * 0.34);
+  const gradient = ctx.createLinearGradient(baseX, baseY, baseX, tipY);
   gradient.addColorStop(0, "rgba(239, 246, 255, 0.92)");
   gradient.addColorStop(0.22, "rgba(56, 189, 248, 0.78)");
   gradient.addColorStop(0.62, "rgba(251, 191, 36, 0.5)");
   gradient.addColorStop(1, "rgba(249, 115, 22, 0)");
   ctx.fillStyle = gradient;
   ctx.beginPath();
-  ctx.moveTo(leftBase.x, leftBase.y);
-  ctx.quadraticCurveTo(leftMid.x, leftMid.y, tipScreen.x, tipScreen.y);
-  ctx.quadraticCurveTo(rightMid.x, rightMid.y, rightBase.x, rightBase.y);
+  ctx.moveTo(baseX - width * 0.3, baseY);
+  ctx.quadraticCurveTo(baseX - width * 0.74, baseY + length * 0.58, baseX, tipY);
+  ctx.quadraticCurveTo(baseX + width * 0.74, baseY + length * 0.58, baseX + width * 0.3, baseY);
   ctx.closePath();
   ctx.fill();
 
-  ctx.globalAlpha = spawnAlpha * (0.48 + thrust * 0.25);
+  ctx.globalAlpha = baseAlpha * (0.48 + thrust * 0.25);
   ctx.fillStyle = "rgba(239, 246, 255, 0.74)";
   ctx.beginPath();
-  ctx.moveTo(baseScreen.x, baseScreen.y);
-  ctx.lineTo(coreLeftBase.x, coreLeftBase.y);
-  ctx.lineTo(coreTip.x, coreTip.y);
-  ctx.lineTo(coreRightBase.x, coreRightBase.y);
+  ctx.moveTo(baseX, baseY);
+  ctx.lineTo(baseX - width * 0.16, baseY);
+  ctx.lineTo(baseX, baseY + length * 0.58);
+  ctx.lineTo(baseX + width * 0.16, baseY);
   ctx.closePath();
   ctx.fill();
   ctx.restore();
 }
 
-function drawEngineFlamesAt(ctx: CanvasRenderingContext2D, state: GameState, aircraft: Aircraft) {
+function drawEngineFlamesAt(ctx: CanvasRenderingContext2D, aircraft: Aircraft, baseAlpha: number) {
   const turnBoost = Math.abs(aircraft.bank ?? 0) * 0.12;
   const size = getAircraftDrawSize(aircraft);
-  const spawnAlpha = aircraft.side === "enemy" ? clamp(1 - (aircraft.spawnWarmup ?? 0) / 1.9, 0.18, 1) : 1;
   for (const port of getEnginePorts(aircraft)) {
-    drawEngineFlame(ctx, state, aircraft, port, size, turnBoost, spawnAlpha);
+    drawEngineFlame(ctx, aircraft, port, size, turnBoost, baseAlpha);
   }
 }
 
@@ -2903,6 +2882,8 @@ function drawAircraftAt(ctx: CanvasRenderingContext2D, state: GameState, aircraf
   if (aircraft.side === "enemy") {
     ctx.globalAlpha *= clamp(1 - (aircraft.spawnWarmup ?? 0) / 1.9, 0.18, 1);
   }
+  const aircraftAlpha = ctx.globalAlpha;
+  drawEngineFlamesAt(ctx, aircraft, aircraftAlpha);
   const drewSprite = drawAircraftSprite(ctx, sprites, getAircraftSpriteKey(aircraft.kind, aircraft.side, aircraft.variant), size);
   if (!drewSprite) drawJet(ctx, aircraft.kind, aircraft.side);
   ctx.restore();
@@ -3077,9 +3058,6 @@ function drawGame(
 
   for (const tanker of state.tankers) drawTanker(ctx, state, tanker, supportSprites);
   for (const wreck of state.wrecks) drawWreckAt(ctx, state, wreck, sprites);
-  for (const ally of state.allies) drawEngineFlamesAt(ctx, state, ally);
-  for (const enemy of state.enemies) drawEngineFlamesAt(ctx, state, enemy);
-  drawEngineFlamesAt(ctx, state, state.player);
   for (const ally of state.allies) drawAircraftAt(ctx, state, ally, sprites);
   for (const enemy of state.enemies) drawAircraftAt(ctx, state, enemy, sprites);
   drawAircraftAt(ctx, state, state.player, sprites);
