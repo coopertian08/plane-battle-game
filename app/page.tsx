@@ -25,8 +25,6 @@ const USA_PLANE_IDS = ["f16", "f18", "f14", "f15", "f117", "f22", "f35"] as cons
 const PLANE_IDS = [...CHINA_PLANE_IDS, ...USA_PLANE_IDS] as const;
 const WEAPON_COLUMNS = 3;
 const WEAPON_ROWS = 2;
-const COBRA_DURATION = 1.18;
-const COBRA_DODGE_SPEED = 275;
 const BEST_SCORE_KEY = "plane-battle-best-score";
 const CREDITS_KEY = "plane-battle-credits";
 const UPGRADES_KEY = "plane-battle-upgrades";
@@ -58,13 +56,6 @@ type EnginePort = {
   y: number;
   widthScale?: number;
   lengthScale?: number;
-};
-type CobraVisual = {
-  progress: number;
-  pitch: number;
-  flip: number;
-  sideSlide: number;
-  side: number;
 };
 
 type InventoryState = {
@@ -141,8 +132,6 @@ type Aircraft = {
   maxFuel?: number;
   overheated?: boolean;
   invulnerable?: number;
-  cobraTimer?: number;
-  cobraCooldown?: number;
   missileAmmo?: number;
   tankerCallsLeft?: number;
   tankerCallsMax?: number;
@@ -155,7 +144,6 @@ type Aircraft = {
   burstTimer?: number;
   collisionCooldown?: number;
   variant?: PlaneId;
-  cobraSide?: number;
 };
 
 type Projectile = {
@@ -1218,31 +1206,8 @@ function localToWorld(aircraft: Aircraft, localX: number, localY: number) {
   };
 }
 
-function getCobraProgress(aircraft: Aircraft) {
-  if (aircraft.side !== "player") return 0;
-  return clamp(1 - (aircraft.cobraTimer ?? 0) / COBRA_DURATION, 0, 1);
-}
-
-function getCobraVisual(aircraft: Aircraft): CobraVisual {
-  const progress = getCobraProgress(aircraft);
-  if (progress <= 0) return { progress: 0, pitch: 0, flip: 0, sideSlide: 0, side: aircraft.cobraSide ?? 1 };
-  const side = aircraft.cobraSide ?? 1;
-  const pitchUp = Math.sin(clamp(progress / 0.36, 0, 1) * (Math.PI / 2));
-  const pitchRecover = 1 - clamp((progress - 0.72) / 0.24, 0, 1);
-  const flipPhase = clamp((progress - 0.28) / 0.48, 0, 1);
-  const slidePhase = clamp((progress - 0.16) / 0.72, 0, 1);
-  return {
-    progress,
-    pitch: pitchUp * pitchRecover,
-    flip: Math.sin(flipPhase * Math.PI),
-    sideSlide: Math.sin(slidePhase * Math.PI),
-    side,
-  };
-}
-
 function localToVisualWorld(aircraft: Aircraft, localX: number, localY: number) {
-  const cobra = getCobraVisual(aircraft);
-  return localToWorld(aircraft, localX + cobra.side * cobra.sideSlide * 8, localY * (1 - cobra.pitch * 0.18));
+  return localToWorld(aircraft, localX, localY);
 }
 
 function getVisualLaunchAngle(aircraft: Aircraft, extraAngle = 0) {
@@ -1359,8 +1324,6 @@ function createGameState(
       maxFuel,
       overheated: false,
       invulnerable: 1.2,
-      cobraTimer: 0,
-      cobraCooldown: 0,
       missileAmmo: 4 + upgrades.missiles * 2,
       tankerCallsMax: 2 + upgrades.tanker,
       tankerCallsLeft: 2 + upgrades.tanker,
@@ -1673,17 +1636,6 @@ function requestRefuel(state: GameState) {
   addFloater(state, "加油机已呼叫", player.x, player.y - 80, "#bae6fd");
 }
 
-function startCobra(state: GameState) {
-  const player = state.player;
-  if (state.phase !== "running" || (player.cobraCooldown ?? 0) > 0 || (player.cobraTimer ?? 0) > 0) return;
-  player.cobraSide = Math.abs(player.bank ?? 0) > 0.12 ? Math.sign(player.bank ?? 0) : player.id % 2 === 0 ? -1 : 1;
-  player.cobraTimer = COBRA_DURATION;
-  player.cobraCooldown = 5.6;
-  player.invulnerable = Math.max(player.invulnerable ?? 0, COBRA_DURATION);
-  player.speed = Math.max(getSpeedStats(state.upgrades, state.selectedPlane).minSpeed, player.speed * 0.82);
-  addFloater(state, "眼镜蛇机动", player.x, player.y - 70, "#fde68a");
-}
-
 function getNextEnemyFormationSlot(state: GameState) {
   const occupied = new Set(state.enemies.map((enemy) => enemy.wingSlot ?? -1));
   const cap = getEnemyActiveCap(state);
@@ -1881,7 +1833,7 @@ function damageAircraft(
   y: number,
   options: { ignoreInvulnerability?: boolean } = {},
 ) {
-  if (!options.ignoreInvulnerability && target.side === "player" && ((target.invulnerable ?? 0) > 0 || (target.cobraTimer ?? 0) > 0)) {
+  if (!options.ignoreInvulnerability && target.side === "player" && (target.invulnerable ?? 0) > 0) {
     addFloater(state, "规避", x, y, "#bae6fd");
     return;
   }
@@ -2087,15 +2039,11 @@ function updatePlayer(state: GameState, dt: number, input: InputState) {
   const throttle = fuel <= 0 ? Math.min(0, input.throttle) : input.throttle;
   const cooling = state.upgrades.engine * 3;
   const speedLoad = state.upgrades.speed * 4.2;
-  const cobra = getCobraVisual(player);
   player.throttle = throttle;
 
   player.invulnerable = Math.max(0, (player.invulnerable ?? 0) - dt);
-  player.cobraCooldown = Math.max(0, (player.cobraCooldown ?? 0) - dt);
-  player.cobraTimer = Math.max(0, (player.cobraTimer ?? 0) - dt);
-  const cobraBank = cobra.progress > 0 ? input.turn * 0.4 + cobra.side * cobra.flip * 0.68 : input.turn;
-  player.bank = (player.bank ?? 0) + (cobraBank - (player.bank ?? 0)) * Math.min(1, dt * (cobra.progress > 0 ? 7 : 5));
-  player.angle = normalizeAngle(player.angle + input.turn * (plane.turnRate + state.upgrades.engine * 0.06) * (cobra.progress > 0 ? 0.42 : 1) * dt);
+  player.bank = (player.bank ?? 0) + (input.turn - (player.bank ?? 0)) * Math.min(1, dt * 5);
+  player.angle = normalizeAngle(player.angle + input.turn * (plane.turnRate + state.upgrades.engine * 0.06) * dt);
 
   if (!player.overheated && throttle > 0.12) {
     player.heat = clamp(heat + Math.max(10, 26 + speedLoad - cooling) * throttle * dt, 0, 100);
@@ -2114,14 +2062,8 @@ function updatePlayer(state: GameState, dt: number, input: InputState) {
   player.speed += (targetSpeed - player.speed) * Math.min(1, dt * (throttle < -0.08 ? 1.9 : 1.15));
   player.speed = clamp(player.speed, speedStats.minSpeed, maxSpeed);
   const dir = direction(player.angle);
-  const perp = { x: -dir.y, y: dir.x };
   player.x += dir.x * player.speed * dt;
   player.y += dir.y * player.speed * dt;
-  if (cobra.progress > 0) {
-    const dodgeSpeed = COBRA_DODGE_SPEED * cobra.sideSlide * (0.78 + Math.abs(input.turn) * 0.22);
-    player.x += perp.x * cobra.side * dodgeSpeed * dt;
-    player.y += perp.y * cobra.side * dodgeSpeed * dt;
-  }
 
   const drain = (0.75 + player.speed / maxSpeed * 0.65 + Math.max(0, throttle) * (1.65 + state.upgrades.speed * 0.22)) * (1 + state.upgrades.speed * 0.1) * dt;
   player.fuel = Math.max(0, fuel - drain);
@@ -2171,43 +2113,50 @@ function updateEnemies(state: GameState, dt: number) {
     const target = chooseEnemyTarget(state, enemy);
     const targetAngle = angleTo(enemy, target);
     const heavyEnemy = enemy.kind === "tank" || enemy.kind === "heavy";
-    const turnRate = enemy.kind === "stealth" ? 1.96 : heavyEnemy ? 1.32 : 1.72;
-    const weave = Math.sin(state.time * (enemy.kind === "stealth" ? 1.9 : 1.6) + enemy.id) * (enemy.kind === "stealth" ? 0.28 : 0.22);
-    const preferred = heavyEnemy ? 900 : enemy.kind === "stealth" ? 840 : 820;
+    const turnRate = enemy.kind === "stealth" ? 2.16 : heavyEnemy ? 1.46 : 1.92;
+    const weave = Math.sin(state.time * (enemy.kind === "stealth" ? 1.95 : 1.65) + enemy.id) * (enemy.kind === "stealth" ? 0.22 : 0.18);
+    const preferred = heavyEnemy ? 720 : enemy.kind === "stealth" ? 680 : 640;
     const dist = distance(enemy, target);
     const trailPoint = getEnemyAttackFormationPoint(state, target, enemy.wingSlot ?? enemy.id, preferred, enemy.kind);
     const separation = getEnemySeparation(state, enemy);
     const separationForce = Math.hypot(separation.x, separation.y);
     const separatedTrailPoint = {
-      x: trailPoint.x + separation.x * 310,
-      y: trailPoint.y + separation.y * 310,
+      x: trailPoint.x + separation.x * 220,
+      y: trailPoint.y + separation.y * 220,
     };
     const stationDist = distance(enemy, separatedTrailPoint);
-    const safeRange = Math.max(target.radius + enemy.radius + 285, preferred * 0.72);
-    const cautionRange = preferred * 0.92;
+    const safeRange = Math.max(target.radius + enemy.radius + 150, preferred * 0.46);
+    const cautionRange = preferred * 0.62;
+    const fireRange = heavyEnemy ? 1180 : enemy.kind === "stealth" ? 1120 : 1060;
     const closingOnTarget = Math.cos(normalizeAngle(targetAngle - enemy.angle)) > 0.42;
     const tooClose = dist < safeRange;
     const shouldOpenDistance = tooClose || (dist < cautionRange && closingOnTarget);
-    const nearStation = stationDist < 185;
+    const nearStation = stationDist < 220;
+    const inAttackWindow = dist > safeRange * 1.05 && dist < fireRange;
+    const shouldChase = dist > preferred * 1.34 || stationDist > 620;
     const escapeSide = ((enemy.wingSlot ?? enemy.id) % 2 === 0 ? 1 : -1);
-    const escapeAngle = normalizeAngle(targetAngle + Math.PI + escapeSide * (tooClose ? 0.58 : 0.36) + weave * 0.22);
+    const escapeAngle = normalizeAngle(targetAngle + Math.PI + escapeSide * (tooClose ? 0.52 : 0.32) + weave * 0.18);
     let desiredAngle = shouldOpenDistance
       ? escapeAngle
-      : nearStation
-        ? turnToward(targetAngle + weave * 0.14, escapeAngle, dist < preferred ? 0.42 : 0.08)
-        : angleTo(enemy, separatedTrailPoint) + weave * 0.12;
+      : shouldChase
+        ? targetAngle + weave * 0.08
+        : inAttackWindow || nearStation
+          ? targetAngle + weave * 0.1
+          : angleTo(enemy, separatedTrailPoint) + weave * 0.1;
     if (separationForce > 0.04 && !tooClose) {
-      desiredAngle = turnToward(desiredAngle, Math.atan2(separation.y, separation.x), clamp(separationForce * 0.7, 0, 0.56));
+      desiredAngle = turnToward(desiredAngle, Math.atan2(separation.y, separation.x), clamp(separationForce * 0.42, 0, 0.36));
     }
     enemy.bank = (enemy.bank ?? 0) + (clamp(normalizeAngle(desiredAngle - enemy.angle) * 1.6, -1, 1) - (enemy.bank ?? 0)) * Math.min(1, dt * 4);
     enemy.angle = turnToward(enemy.angle, desiredAngle, turnRate * dt);
     const warmingUp = (enemy.spawnWarmup ?? 0) > 0;
     const arrival = warmingUp ? 0.34 : 1;
-    const maxEnemySpeed = enemy.kind === "stealth" ? 435 + state.difficulty * 9 : heavyEnemy ? 350 + state.difficulty * 6 : 380 + state.difficulty * 8;
+    const maxEnemySpeed = enemy.kind === "stealth" ? 390 + state.difficulty * 5 : heavyEnemy ? 328 + state.difficulty * 4 : 352 + state.difficulty * 5;
     const minEnemySpeed = warmingUp ? 104 : heavyEnemy ? 175 : 190;
-    const holdSpeed = clamp(target.speed * 0.86 + (nearStation ? -20 : stationDist * 0.13), minEnemySpeed, maxEnemySpeed);
-    const retreatSpeed = clamp(target.speed + 145 + (safeRange - Math.min(dist, safeRange)) * 0.22, minEnemySpeed, maxEnemySpeed);
-    const speedTarget = (shouldOpenDistance ? retreatSpeed : holdSpeed) * arrival;
+    const chaseSpeed = clamp(target.speed + 72 + Math.max(0, dist - preferred) * 0.08, minEnemySpeed, maxEnemySpeed);
+    const attackSpeed = clamp(target.speed * 0.96 + (dist - preferred) * 0.11, minEnemySpeed, maxEnemySpeed);
+    const holdSpeed = clamp(target.speed * 0.9 + (nearStation ? -6 : stationDist * 0.08), minEnemySpeed, maxEnemySpeed);
+    const retreatSpeed = clamp(target.speed + 92 + (safeRange - Math.min(dist, safeRange)) * 0.18, minEnemySpeed, maxEnemySpeed);
+    const speedTarget = (shouldOpenDistance ? retreatSpeed : shouldChase ? chaseSpeed : inAttackWindow ? attackSpeed : holdSpeed) * arrival;
     enemy.speed += (speedTarget - enemy.speed) * dt * (shouldOpenDistance ? 0.82 : 0.45);
     enemy.speed = clamp(enemy.speed, minEnemySpeed, maxEnemySpeed);
     enemy.throttle = clamp((speedTarget - enemy.speed) / 160, -0.2, 1);
@@ -2228,9 +2177,9 @@ function updateEnemies(state: GameState, dt: number) {
       (enemy.spawnWarmup ?? 0) <= 0 &&
       (enemy.burstRemaining ?? 0) <= 0 &&
       !tooClose &&
-      dist > safeRange &&
-      dist < (heavyEnemy ? 1120 : 1020) &&
-      aimError < (enemy.kind === "stealth" ? 0.28 : 0.22) &&
+      dist > safeRange * 1.05 &&
+      dist < fireRange &&
+      aimError < (enemy.kind === "stealth" ? 0.48 : 0.42) &&
       enemy.fireTimer <= 0
     ) {
       startEnemyBurst(enemy);
@@ -2707,11 +2656,11 @@ function drawEngineFlame(
   aircraft: Aircraft,
   port: EnginePort,
   size: number,
-  cobraPitch: number,
+  turnBoost: number,
   spawnAlpha: number,
 ) {
   const throttle = aircraft.throttle ?? 0;
-  const thrust = clamp(0.28 + Math.max(0, throttle) * 0.72 + cobraPitch * 0.62, 0.14, 1.25);
+  const thrust = clamp(0.28 + Math.max(0, throttle) * 0.72 + turnBoost, 0.14, 1.18);
   const length = size * (0.14 + thrust * 0.22) * (port.lengthScale ?? 1);
   const width = size * (0.036 + thrust * 0.022) * (port.widthScale ?? 1);
   const forward = direction(aircraft.angle);
@@ -2757,29 +2706,27 @@ function drawEngineFlame(
 }
 
 function drawEngineFlamesAt(ctx: CanvasRenderingContext2D, state: GameState, aircraft: Aircraft) {
-  const cobra = getCobraVisual(aircraft);
-  const cobraPitch = cobra.pitch + cobra.flip * 0.32;
+  const turnBoost = Math.abs(aircraft.bank ?? 0) * 0.12;
   const size = getAircraftDrawSize(aircraft);
   const spawnAlpha = aircraft.side === "enemy" ? clamp(1 - (aircraft.spawnWarmup ?? 0) / 1.9, 0.18, 1) : 1;
   for (const port of getEnginePorts(aircraft)) {
-    drawEngineFlame(ctx, state, aircraft, port, size, cobraPitch, spawnAlpha);
+    drawEngineFlame(ctx, state, aircraft, port, size, turnBoost, spawnAlpha);
   }
 }
 
-function drawJet(ctx: CanvasRenderingContext2D, planeId: PlaneId | EnemyKind, team: Aircraft["side"], cobraProgress = 0) {
+function drawJet(ctx: CanvasRenderingContext2D, planeId: PlaneId | EnemyKind, team: Aircraft["side"]) {
   const enemy = team === "enemy";
   const naval = planeId === "j15" || planeId === "f18" || planeId === "f14";
   const delta = planeId === "j10" || planeId === "f16";
   const slender = planeId === "j8" || planeId === "f117";
   const heavyFrame = planeId === "j11" || planeId === "j16" || planeId === "f14" || planeId === "f15";
   const stealthFrame = planeId === "j20" || planeId === "j35" || planeId === "f22" || planeId === "f35" || planeId === "f117" || planeId === "stealth";
-  const pitch = Math.sin(cobraProgress * Math.PI);
   const body = enemy ? "#9f1239" : stealthFrame ? "#334155" : heavyFrame ? "#64748b" : naval ? "#475569" : delta ? "#64748b" : "#d1d5db";
   const dark = enemy ? "#450a0a" : "#1f2937";
   const stripe = enemy ? "#fca5a5" : "#ef4444";
 
   ctx.save();
-  ctx.scale(0.74 + pitch * 0.08, 0.74 - pitch * 0.05);
+  ctx.scale(0.74, 0.74);
   ctx.strokeStyle = "rgba(2,6,23,0.72)";
   ctx.lineWidth = 2;
   ctx.fillStyle = body;
@@ -2891,10 +2838,10 @@ function drawJet(ctx: CanvasRenderingContext2D, planeId: PlaneId | EnemyKind, te
   ctx.restore();
 }
 
-function drawAircraftDepthOverlay(ctx: CanvasRenderingContext2D, size: number, bank: number, cobra: CobraVisual) {
-  const intensity = clamp(Math.abs(bank) * 0.22 + cobra.pitch * 0.2 + cobra.flip * 0.28, 0, 0.42);
+function drawAircraftDepthOverlay(ctx: CanvasRenderingContext2D, size: number, bank: number) {
+  const intensity = clamp(0.08 + Math.abs(bank) * 0.26, 0, 0.34);
   if (intensity <= 0.02) return;
-  const brightSide = cobra.progress > 0 ? cobra.side : bank >= 0 ? -1 : 1;
+  const brightSide = bank >= 0 ? -1 : 1;
   const darkSide = -brightSide;
 
   ctx.save();
@@ -2921,7 +2868,7 @@ function drawAircraftDepthOverlay(ctx: CanvasRenderingContext2D, size: number, b
   ctx.fill();
 
   ctx.globalCompositeOperation = "screen";
-  ctx.globalAlpha = clamp(0.1 + cobra.pitch * 0.18, 0.1, 0.26);
+  ctx.globalAlpha = 0.12;
   ctx.fillStyle = "rgba(219, 234, 254, 0.65)";
   ctx.beginPath();
   ctx.ellipse(0, -size * 0.2, size * 0.055, size * 0.16, 0, 0, Math.PI * 2);
@@ -2929,47 +2876,23 @@ function drawAircraftDepthOverlay(ctx: CanvasRenderingContext2D, size: number, b
   ctx.restore();
 }
 
-function drawCobraVapor(ctx: CanvasRenderingContext2D, size: number, cobra: CobraVisual) {
-  if (cobra.progress <= 0) return;
-  const alpha = clamp(Math.sin(cobra.progress * Math.PI) * 0.42, 0, 0.38);
-  if (alpha <= 0.02) return;
-  ctx.save();
-  ctx.globalCompositeOperation = "screen";
-  ctx.globalAlpha = alpha;
-  ctx.strokeStyle = "rgba(224, 242, 254, 0.8)";
-  ctx.lineWidth = Math.max(1.4, size * 0.018);
-  ctx.lineCap = "round";
-  for (const side of [-1, 1]) {
-    const lift = side === cobra.side ? 1.12 : 0.72;
-    ctx.beginPath();
-    ctx.moveTo(side * size * 0.25, size * 0.04);
-    ctx.bezierCurveTo(side * size * 0.36, size * 0.16, side * size * 0.32, size * 0.28, side * size * 0.18, size * 0.36 * lift);
-    ctx.stroke();
-  }
-  ctx.restore();
-}
-
 function drawAircraftAt(ctx: CanvasRenderingContext2D, state: GameState, aircraft: Aircraft, sprites: HTMLImageElement | null) {
   const p = screenPoint(state, aircraft.x, aircraft.y);
-  const cobra = getCobraVisual(aircraft);
   const bank = clamp(aircraft.bank ?? 0, -1, 1);
   const size = getAircraftDrawSize(aircraft);
   ctx.save();
   ctx.translate(p.x, p.y);
   ctx.rotate(aircraft.angle + Math.PI / 2);
-  ctx.translate(cobra.side * size * 0.055 * cobra.sideSlide, -size * 0.05 * cobra.pitch);
   if (aircraft.side === "player" && (aircraft.invulnerable ?? 0) > 0) {
     ctx.globalAlpha = 0.62 + Math.sin(state.time * 26) * 0.2;
   }
-  const flipScale = 1 - cobra.flip * 0.46;
-  ctx.scale((1 - Math.abs(bank) * 0.035) * flipScale, 1 + Math.abs(bank) * 0.016 - cobra.pitch * 0.05 + cobra.flip * 0.06);
+  ctx.scale(1 - Math.abs(bank) * 0.04, 1 + Math.abs(bank) * 0.018);
   if (aircraft.side === "enemy") {
     ctx.globalAlpha *= clamp(1 - (aircraft.spawnWarmup ?? 0) / 1.9, 0.18, 1);
   }
-  const drewSprite = drawAircraftSprite(ctx, sprites, getAircraftSpriteKey(aircraft.kind, aircraft.side, aircraft.variant), size * (1 + cobra.pitch * 0.04));
-  if (!drewSprite) drawJet(ctx, aircraft.kind, aircraft.side, cobra.progress);
-  drawAircraftDepthOverlay(ctx, size, bank, cobra);
-  drawCobraVapor(ctx, size, cobra);
+  const drewSprite = drawAircraftSprite(ctx, sprites, getAircraftSpriteKey(aircraft.kind, aircraft.side, aircraft.variant), size);
+  if (!drewSprite) drawJet(ctx, aircraft.kind, aircraft.side);
+  drawAircraftDepthOverlay(ctx, size, bank);
   ctx.restore();
 
   if (aircraft.side !== "player" && aircraft.hp < aircraft.maxHp) {
@@ -3021,31 +2944,71 @@ function drawTanker(ctx: CanvasRenderingContext2D, state: GameState, tanker: Tan
     ctx.restore();
     return;
   }
-  ctx.fillStyle = tanker.refueling ? "#bae6fd" : "#e2e8f0";
-  ctx.strokeStyle = "rgba(15,23,42,0.68)";
+  const fuselageGradient = ctx.createLinearGradient(-18, 0, 18, 0);
+  fuselageGradient.addColorStop(0, "#94a3b8");
+  fuselageGradient.addColorStop(0.36, "#f8fafc");
+  fuselageGradient.addColorStop(0.62, "#cbd5e1");
+  fuselageGradient.addColorStop(1, "#64748b");
+  const wingGradient = ctx.createLinearGradient(0, -16, 0, 42);
+  wingGradient.addColorStop(0, "#cbd5e1");
+  wingGradient.addColorStop(0.56, "#64748b");
+  wingGradient.addColorStop(1, "#334155");
+  ctx.strokeStyle = "rgba(15,23,42,0.72)";
   ctx.lineWidth = 2;
-  drawRoundRect(ctx, -13, -58, 26, 96, 12);
-  ctx.fill();
-  ctx.stroke();
-  ctx.fillStyle = "#94a3b8";
+  ctx.fillStyle = wingGradient;
   ctx.beginPath();
-  ctx.moveTo(-13, -16);
-  ctx.lineTo(-96, 18);
-  ctx.lineTo(-62, 36);
-  ctx.lineTo(-12, 14);
-  ctx.moveTo(13, -16);
-  ctx.lineTo(96, 18);
-  ctx.lineTo(62, 36);
-  ctx.lineTo(12, 14);
+  ctx.moveTo(-12, -18);
+  ctx.lineTo(-112, 16);
+  ctx.lineTo(-72, 40);
+  ctx.lineTo(-11, 16);
+  ctx.moveTo(12, -18);
+  ctx.lineTo(112, 16);
+  ctx.lineTo(72, 40);
+  ctx.lineTo(11, 16);
   ctx.closePath();
   ctx.fill();
   ctx.stroke();
-  ctx.strokeStyle = "#0ea5e9";
-  ctx.lineWidth = 3;
-  ctx.beginPath();
-  ctx.moveTo(0, 38);
-  ctx.lineTo(0, 86);
+  ctx.fillStyle = fuselageGradient;
+  drawRoundRect(ctx, -15, -66, 30, 112, 15);
+  ctx.fill();
   ctx.stroke();
+  ctx.fillStyle = "#475569";
+  ctx.beginPath();
+  ctx.moveTo(-8, 30);
+  ctx.lineTo(-42, 64);
+  ctx.lineTo(-14, 66);
+  ctx.lineTo(0, 43);
+  ctx.lineTo(14, 66);
+  ctx.lineTo(42, 64);
+  ctx.lineTo(8, 30);
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+  ctx.fillStyle = "#0f172a";
+  ctx.beginPath();
+  ctx.ellipse(0, -34, 7, 18, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = "#1e293b";
+  for (const side of [-1, 1]) {
+    ctx.beginPath();
+    ctx.ellipse(side * 52, 24, 8, 14, 0.08 * side, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.strokeStyle = tanker.refueling ? "rgba(56, 189, 248, 0.96)" : "rgba(148, 163, 184, 0.78)";
+  ctx.lineWidth = tanker.refueling ? 3.2 : 2.2;
+  ctx.beginPath();
+  ctx.moveTo(0, 44);
+  ctx.lineTo(0, 94);
+  ctx.stroke();
+  if (tanker.refueling) {
+    ctx.globalCompositeOperation = "screen";
+    ctx.strokeStyle = "rgba(186, 230, 253, 0.5)";
+    ctx.lineWidth = 8;
+    ctx.beginPath();
+    ctx.moveTo(0, 48);
+    ctx.lineTo(0, 92);
+    ctx.stroke();
+  }
   ctx.restore();
 }
 
@@ -3508,13 +3471,6 @@ export default function Home() {
     syncHud();
   }, [syncHud]);
 
-  const useCobra = useCallback(() => {
-    const state = gameRef.current;
-    if (!state) return;
-    startCobra(state);
-    syncHud();
-  }, [syncHud]);
-
   useEffect(() => {
     const storedUpgrades = readPlaneUpgrades();
     const storedUnlocked = readUnlockedPlanes();
@@ -3613,10 +3569,6 @@ export default function Home() {
         event.preventDefault();
         callTanker();
       }
-      if (key === " " && !event.repeat) {
-        event.preventDefault();
-        useCobra();
-      }
       if (key === "p" && !event.repeat) togglePause();
       if (key === "enter" && !event.repeat) startEndlessGame();
     };
@@ -3627,7 +3579,7 @@ export default function Home() {
       window.removeEventListener("keydown", handleKeyDown);
       window.removeEventListener("keyup", handleKeyUp);
     };
-  }, [callTanker, startEndlessGame, togglePause, useCobra, useMissile]);
+  }, [callTanker, startEndlessGame, togglePause, useMissile]);
 
   const handleJoystickMove = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
     const rect = event.currentTarget.getBoundingClientRect();
@@ -4058,9 +4010,6 @@ export default function Home() {
                 </div>
               </div>
               <div className="action-cluster">
-                <button type="button" onClick={useCobra}>
-                  机动
-                </button>
                 <button type="button" onClick={callTanker} disabled={hud.tankerCallsLeft <= 0}>
                   加油
                 </button>
