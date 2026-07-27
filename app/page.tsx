@@ -59,7 +59,7 @@ type HomeTab = "battle" | "upgrade" | "shop" | "inventory";
 type TutorialKey = "controls" | "missile" | "refuel";
 type PlaneId = (typeof PLANE_IDS)[number];
 type PlaneFaction = (typeof FACTION_IDS)[number];
-type UpgradeKey = "firepower" | "missiles" | "armor" | "fuelTank" | "engine" | "speed" | "tanker";
+type UpgradeKey = "firepower" | "missiles" | "armor" | "fuelTank" | "engine" | "speed" | "tanker" | "ammo";
 type EnemyKind = "scout" | "fighter" | "heavy" | "stealth" | "tank";
 type ProjectileOwner = "player" | "ally" | "enemy";
 type SpriteKey = PlaneId;
@@ -162,6 +162,13 @@ type Aircraft = {
   overheated?: boolean;
   invulnerable?: number;
   missileAmmo?: number;
+  ammoReserve?: number;
+  maxAmmoReserve?: number;
+  magazineAmmo?: number;
+  magazineSize?: number;
+  reloadTimer?: number;
+  fuelEmptyTimer?: number;
+  fuelEmptyLimit?: number;
   tankerCallsLeft?: number;
   tankerCallsMax?: number;
   wingSlot?: number;
@@ -310,6 +317,13 @@ type HudState = {
   tankerCallsLeft: number;
   tankerCallsMax: number;
   missileAmmo: number;
+  ammoReserve: number;
+  maxAmmoReserve: number;
+  magazineAmmo: number;
+  magazineSize: number;
+  reloadTimer: number;
+  fuelEmptyTimer: number;
+  fuelEmptyLimit: number;
   earnedCredits: number;
   allies: number;
   radarRange: number;
@@ -319,6 +333,7 @@ type HudState = {
 type InputState = {
   throttle: number;
   turn: number;
+  firing: boolean;
 };
 
 const defaultUpgrades: UpgradeState = {
@@ -329,6 +344,7 @@ const defaultUpgrades: UpgradeState = {
   engine: 0,
   speed: 0,
   tanker: 0,
+  ammo: 0,
 };
 
 const defaultUpgradeBlueprints: UpgradeBlueprintState = {
@@ -339,6 +355,7 @@ const defaultUpgradeBlueprints: UpgradeBlueprintState = {
   engine: 0,
   speed: 0,
   tanker: 0,
+  ammo: 0,
 };
 
 const defaultPlaneBlueprints = Object.fromEntries(PLANE_IDS.map((planeId) => [planeId, 0])) as PlaneBlueprintState;
@@ -412,6 +429,13 @@ const initialHud: HudState = {
   tankerCallsLeft: 2,
   tankerCallsMax: 2,
   missileAmmo: 4,
+  ammoReserve: 620,
+  maxAmmoReserve: 620,
+  magazineAmmo: 72,
+  magazineSize: 72,
+  reloadTimer: 0,
+  fuelEmptyTimer: 0,
+  fuelEmptyLimit: 10,
   earnedCredits: 0,
   allies: 0,
   radarRange: 0,
@@ -1011,6 +1035,13 @@ const upgradeCatalog: UpgradeMeta[] = [
     baseCost: 260,
     max: 4,
   },
+  {
+    key: "ammo",
+    label: "弹药携带",
+    description: "增加机炮总弹药，每级约增加240发。",
+    baseCost: 230,
+    max: 5,
+  },
 ];
 
 const upgradeBlueprintLabels: Record<UpgradeKey, string> = {
@@ -1021,6 +1052,7 @@ const upgradeBlueprintLabels: Record<UpgradeKey, string> = {
   engine: "发动机升级蓝图",
   speed: "速度升级蓝图",
   tanker: "支援系统蓝图",
+  ammo: "弹药携带蓝图",
 };
 
 const dailyRewards: InventoryReward[] = [
@@ -1190,6 +1222,7 @@ function sanitizeUpgrades(upgrades?: Partial<UpgradeState> & Record<string, unkn
     engine: clamp(Number(upgrades?.engine ?? upgrades?.reload ?? upgrades?.maneuver) || 0, 0, 5),
     speed: clamp(Number(upgrades?.speed) || 0, 0, 5),
     tanker: clamp(Number(upgrades?.tanker ?? upgrades?.bombBay) || 0, 0, 4),
+    ammo: clamp(Number(upgrades?.ammo) || 0, 0, 5),
   };
 }
 
@@ -1318,6 +1351,10 @@ function saveCampaignStage(stage: number) {
 
 function normalizeStageNumber(stage: number) {
   return Number.isFinite(stage) ? clamp(Math.floor(stage), 1, 999) : 1;
+}
+
+function isEndlessUnlocked(stage: number) {
+  return normalizeStageNumber(stage) > 5;
 }
 
 function readPlaneUpgrades(): PlaneUpgradeState {
@@ -1658,6 +1695,14 @@ function getMaxFuel(upgrades: UpgradeState, planeId: PlaneId) {
   return getPlaneMeta(planeId).fuel + upgrades.fuelTank * 42;
 }
 
+function getMagazineSize(planeId: PlaneId) {
+  return 72 + getPlaneTier(planeId) * 8;
+}
+
+function getMaxCannonAmmo(upgrades: UpgradeState, planeId: PlaneId) {
+  return 620 + getPlaneTier(planeId) * 70 + upgrades.ammo * 240;
+}
+
 function getSpeedStats(upgrades: UpgradeState, planeId: PlaneId) {
   const plane = getPlaneMeta(planeId);
   return {
@@ -1786,6 +1831,8 @@ function createGameState(
   const plane = getPlaneMeta(selectedPlane);
   const maxHp = getMaxHp(upgrades, selectedPlane);
   const maxFuel = getMaxFuel(upgrades, selectedPlane);
+  const maxAmmoReserve = getMaxCannonAmmo(upgrades, selectedPlane);
+  const magazineSize = getMagazineSize(selectedPlane);
   const speedStats = getSpeedStats(upgrades, selectedPlane);
   const playerRadius = isStealthPlane(selectedPlane) ? 33 : isHeavyPlane(selectedPlane) ? 32 : 30;
   const state: GameState = {
@@ -1813,6 +1860,13 @@ function createGameState(
       overheated: false,
       invulnerable: 1.2,
       missileAmmo: 4 + upgrades.missiles * 2,
+      ammoReserve: maxAmmoReserve,
+      maxAmmoReserve,
+      magazineAmmo: Math.min(magazineSize, maxAmmoReserve),
+      magazineSize,
+      reloadTimer: 0,
+      fuelEmptyTimer: 0,
+      fuelEmptyLimit: 10,
       tankerCallsMax: 2 + upgrades.tanker,
       tankerCallsLeft: 2 + upgrades.tanker,
     },
@@ -1867,9 +1921,13 @@ function snapshot(state: GameState): HudState {
   const heat = player.heat ?? 0;
   const fuel = player.fuel ?? 0;
   const maxFuel = player.maxFuel ?? 1;
+  const fuelEmptyTimer = player.fuelEmptyTimer ?? 0;
+  const fuelEmptyLimit = player.fuelEmptyLimit ?? 10;
   const engineStatus = player.overheated
     ? "过热"
-    : fuel <= maxFuel * 0.14
+    : fuel <= 0 && fuelEmptyTimer > 0
+      ? "燃油耗尽"
+      : fuel <= maxFuel * 0.14
       ? "燃油低"
       : heat > 72
         ? "高温"
@@ -1911,6 +1969,13 @@ function snapshot(state: GameState): HudState {
     tankerCallsLeft: player.tankerCallsLeft ?? 0,
     tankerCallsMax: player.tankerCallsMax ?? 0,
     missileAmmo: player.missileAmmo ?? 0,
+    ammoReserve: player.ammoReserve ?? 0,
+    maxAmmoReserve: player.maxAmmoReserve ?? 0,
+    magazineAmmo: player.magazineAmmo ?? 0,
+    magazineSize: player.magazineSize ?? 0,
+    reloadTimer: player.reloadTimer ?? 0,
+    fuelEmptyTimer,
+    fuelEmptyLimit,
     earnedCredits: state.earnedCredits,
     allies: state.allies.length,
     radarRange,
@@ -1998,6 +2063,14 @@ function addBullet(state: GameState, owner: ProjectileOwner, x: number, y: numbe
 function fireGuns(state: GameState, aircraft: Aircraft, owner: ProjectileOwner, resetTimer = true) {
   const plane = getPlaneMeta(state.selectedPlane);
   const ports = getGunPorts(state, aircraft);
+  if (owner === "player") {
+    const reserve = aircraft.ammoReserve ?? 0;
+    const magazine = aircraft.magazineAmmo ?? 0;
+    if (reserve <= 0 || magazine <= 0 || (aircraft.reloadTimer ?? 0) > 0) {
+      if (resetTimer) aircraft.fireTimer = reserve <= 0 ? 0.22 : 0.08;
+      return false;
+    }
+  }
   const basePower =
     owner === "enemy"
       ? aircraft.kind === "heavy" || aircraft.kind === "tank"
@@ -2007,16 +2080,28 @@ function fireGuns(state: GameState, aircraft: Aircraft, owner: ProjectileOwner, 
           : 9
       : (3.2 + state.upgrades.firepower * 0.74) * (1 + plane.damageBonus);
   const bulletSpeed = owner === "enemy" ? 650 : 930;
+  let shotsFired = 0;
 
   for (const port of ports) {
+    if (owner === "player") {
+      if ((aircraft.ammoReserve ?? 0) <= 0 || (aircraft.magazineAmmo ?? 0) <= 0) break;
+      aircraft.ammoReserve = Math.max(0, (aircraft.ammoReserve ?? 0) - 1);
+      aircraft.magazineAmmo = Math.max(0, (aircraft.magazineAmmo ?? 0) - 1);
+    }
     const origin = localToWorld(aircraft, port.x, port.y);
     const launchAngle = normalizeAngle(aircraft.angle + port.angle);
     addBullet(state, owner, origin.x, origin.y, launchAngle, bulletSpeed + aircraft.speed * 0.35, basePower * port.powerScale);
+    shotsFired += 1;
   }
 
-  if (!resetTimer) return;
+  if (owner === "player" && (aircraft.magazineAmmo ?? 0) <= 0 && (aircraft.ammoReserve ?? 0) > 0) {
+    aircraft.reloadTimer = Math.max(aircraft.reloadTimer ?? 0, 1.05);
+  }
+
+  if (!resetTimer) return shotsFired > 0;
 
   aircraft.fireTimer = owner === "enemy" ? randomBetween(0.78, 1.35) : Math.max(0.085, 0.16 - state.upgrades.engine * 0.009);
+  return shotsFired > 0;
 }
 
 function getEnemyBurstProfile(enemy: Aircraft) {
@@ -2556,8 +2641,24 @@ function updatePlayer(state: GameState, dt: number, input: InputState) {
 
   const drain = (0.75 + player.speed / maxSpeed * 0.65 + Math.max(0, throttle) * (1.65 + state.upgrades.speed * 0.22)) * (1 + state.upgrades.speed * 0.1) * dt;
   player.fuel = Math.max(0, fuel - drain);
+  if ((player.fuel ?? 0) <= 0) {
+    player.fuelEmptyTimer = (player.fuelEmptyTimer ?? 0) + dt;
+    if ((player.fuelEmptyTimer ?? 0) >= (player.fuelEmptyLimit ?? 10)) {
+      addFloater(state, "燃油不足坠机", player.x, player.y - 92, "#fecaca");
+      damageAircraft(state, player, player.maxHp + 999, player.x, player.y, { ignoreInvulnerability: true });
+      return;
+    }
+  } else {
+    player.fuelEmptyTimer = 0;
+  }
+
   player.fireTimer -= dt;
-  if (player.fireTimer <= 0 && fuel > 0) fireGuns(state, player, "player");
+  player.reloadTimer = Math.max(0, (player.reloadTimer ?? 0) - dt);
+  if ((player.magazineAmmo ?? 0) <= 0 && (player.ammoReserve ?? 0) > 0 && (player.reloadTimer ?? 0) <= 0) {
+    player.magazineAmmo = Math.min(player.magazineSize ?? 0, player.ammoReserve ?? 0);
+    addFloater(state, "换弹", player.x, player.y - 62, "#dbeafe");
+  }
+  if (input.firing && player.fireTimer <= 0 && (player.fuel ?? 0) > 0) fireGuns(state, player, "player");
 }
 
 function updateAllies(state: GameState, dt: number) {
@@ -2812,6 +2913,7 @@ function updateGame(state: GameState, dt: number, input: InputState) {
   if (state.phase !== "running") return;
 
   updatePlayer(state, dt, input);
+  if (state.phase !== "running") return;
   updateAllies(state, dt);
   updateEnemies(state, dt);
   updateTankers(state, dt);
@@ -3673,7 +3775,8 @@ export default function Home() {
   const stageRef = useRef<HTMLDivElement | null>(null);
   const gameRef = useRef<GameState | null>(null);
   const keysRef = useRef(new Set<string>());
-  const joystickRef = useRef<InputState>({ throttle: 0, turn: 0 });
+  const joystickRef = useRef<InputState>({ throttle: 0, turn: 0, firing: false });
+  const mobileFireRef = useRef(false);
   const spritesRef = useRef<HTMLImageElement | null>(null);
   const weaponSpritesRef = useRef<HTMLImageElement | null>(null);
   const supportSpritesRef = useRef<HTMLImageElement | null>(null);
@@ -3735,6 +3838,7 @@ export default function Home() {
     return {
       turn: clamp(keyboard.turn + joystickRef.current.turn, -1, 1),
       throttle: clamp(keyboard.throttle + joystickRef.current.throttle, -1, 1),
+      firing: keys.has("e") || mobileFireRef.current,
     };
   }, []);
 
@@ -3777,6 +3881,10 @@ export default function Home() {
     query.addEventListener("change", updatePointerType);
     return () => query.removeEventListener("change", updatePointerType);
   }, []);
+
+  useEffect(() => {
+    if (phase !== "running" || hud.ammoReserve <= 0) mobileFireRef.current = false;
+  }, [hud.ammoReserve, phase]);
 
   useEffect(() => {
     const aircraftImage = new Image();
@@ -3855,7 +3963,13 @@ export default function Home() {
   );
 
   const startStageGame = useCallback(() => startRun("stage", campaignStage), [campaignStage, startRun]);
-  const startEndlessGame = useCallback(() => startRun("endless"), [startRun]);
+  const startEndlessGame = useCallback(() => {
+    if (!isEndlessUnlocked(campaignStage)) {
+      setRewardNotice("通关第5关后解锁无尽模式");
+      return;
+    }
+    startRun("endless");
+  }, [campaignStage, startRun]);
   const startNextStage = useCallback(() => startRun("stage", Math.max(campaignStage, hud.stage + 1)), [campaignStage, hud.stage, startRun]);
 
   const returnToMenu = useCallback(() => {
@@ -4159,7 +4273,7 @@ export default function Home() {
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       const key = event.key.toLowerCase();
-      if (["w", "a", "s", "d"].includes(key)) {
+      if (["w", "a", "s", "d", "e"].includes(key)) {
         event.preventDefault();
         keysRef.current.add(key);
       }
@@ -4167,7 +4281,7 @@ export default function Home() {
         event.preventDefault();
         useMissile();
       }
-      if (key === "e" && !event.repeat) {
+      if (key === "t" && !event.repeat) {
         event.preventDefault();
         callTanker();
       }
@@ -4193,6 +4307,7 @@ export default function Home() {
     joystickRef.current = {
       turn: clamp(rawX / maxDistance, -1, 1),
       throttle: clamp(-rawY / maxDistance, -1, 1),
+      firing: false,
     };
     setJoystick({ x: rawX, y: rawY, active: true });
   }, []);
@@ -4206,13 +4321,24 @@ export default function Home() {
   );
 
   const resetJoystick = useCallback(() => {
-    joystickRef.current = { throttle: 0, turn: 0 };
+    joystickRef.current = { throttle: 0, turn: 0, firing: false };
     setJoystick({ x: 0, y: 0, active: false });
+  }, []);
+
+  const startMobileCannon = useCallback((event: React.PointerEvent<HTMLButtonElement>) => {
+    event.currentTarget.setPointerCapture(event.pointerId);
+    mobileFireRef.current = true;
+  }, []);
+
+  const stopMobileCannon = useCallback(() => {
+    mobileFireRef.current = false;
   }, []);
 
   const plane = getPlaneMeta(selectedPlane);
   const hpPercent = clamp(hud.hp / Math.max(1, hud.maxHp), 0, 1) * 100;
   const fuelPercent = clamp(hud.fuel / Math.max(1, hud.maxFuel), 0, 1) * 100;
+  const ammoPercent = clamp(hud.ammoReserve / Math.max(1, hud.maxAmmoReserve), 0, 1) * 100;
+  const fuelCrashCountdown = hud.fuel <= 0 ? Math.max(0, Math.ceil(hud.fuelEmptyLimit - hud.fuelEmptyTimer)) : 0;
   const showBattleUi = phase === "running" || phase === "paused" || phase === "playerDying";
   const showPanel = phase !== "running" && phase !== "takeoff" && phase !== "playerDying";
   const showMainMenu = phase === "menu";
@@ -4220,6 +4346,7 @@ export default function Home() {
   const showOver = phase === "over";
   const showStageClear = phase === "stageClear";
   const showPause = phase === "paused";
+  const endlessUnlocked = isEndlessUnlocked(campaignStage);
   const visibleBlueprintPlaneIds = PLANE_IDS.filter((planeId) => !unlockedPlanes[planeId] && inventory.planeBlueprints[planeId] > 0);
   const totalPlaneBlueprints = visibleBlueprintPlaneIds.reduce((total, planeId) => total + inventory.planeBlueprints[planeId], 0);
   const nextDailyDay = getNextDailyDay(dailyCheckin);
@@ -4264,15 +4391,15 @@ export default function Home() {
   const tutorialText =
     tutorialPrompt === "controls"
       ? isTouchDevice
-        ? "用左下角摇杆操控战机：向上推加速，左右推动控制转向。"
-        : "用 WASD 操控战机：W 加速，S 减速，A / D 左右转向。"
+        ? "用左下角摇杆操控战机，右下角按钮发射机炮、导弹和呼叫加油机。"
+        : "用 WASD 操控战机：E 按住机炮，Q 导弹，T 呼叫加油机。"
       : tutorialPrompt === "missile"
         ? isTouchDevice
           ? "导弹按钮在这里。"
           : "按 Q 键释放追踪导弹。"
         : isTouchDevice
           ? "燃油不足时点这里呼叫加油机。"
-          : "燃油耗尽时按 E 键呼叫加油机。";
+          : "燃油耗尽时按 T 键呼叫加油机。";
 
   return (
     <main className="game-shell">
@@ -4340,8 +4467,18 @@ export default function Home() {
                 <div className="fuel-meter">
                   <i style={{ width: `${fuelPercent}%` }} />
                 </div>
+                <div>
+                  <span>机炮弹药</span>
+                  <strong>
+                    {hud.magazineAmmo}/{hud.ammoReserve}
+                  </strong>
+                </div>
+                <div className="ammo-meter">
+                  <i style={{ width: `${ammoPercent}%` }} />
+                </div>
                 <small>
-                  加油机 {hud.tankerCallsLeft}/{hud.tankerCallsMax}
+                  加油机 T {hud.tankerCallsLeft}/{hud.tankerCallsMax}
+                  {fuelCrashCountdown > 0 ? ` · 坠机 ${fuelCrashCountdown}s` : ""}
                 </small>
               </div>
 
@@ -4385,9 +4522,9 @@ export default function Home() {
                       <span>关卡出击</span>
                       <small>第 {campaignStage} 关 · 奖励 {getStageReward(campaignStage)}</small>
                     </button>
-                    <button className="secondary-action mode-action" type="button" onClick={startEndlessGame}>
+                    <button className="secondary-action mode-action" type="button" onClick={startEndlessGame} disabled={!endlessUnlocked}>
                       <span>无尽模式</span>
-                      <small>开放空域 · 持续追击</small>
+                      <small>{endlessUnlocked ? "开放空域 · 持续追击" : "通关第5关解锁"}</small>
                     </button>
                   </div>
                 </>
@@ -4661,6 +4798,17 @@ export default function Home() {
                 </div>
               </div>
               <div className="action-cluster">
+                <button
+                  className="cannon-action"
+                  type="button"
+                  onPointerDown={startMobileCannon}
+                  onPointerUp={stopMobileCannon}
+                  onPointerCancel={stopMobileCannon}
+                  onLostPointerCapture={stopMobileCannon}
+                  disabled={hud.ammoReserve <= 0}
+                >
+                  机炮
+                </button>
                 <button className="tanker-action" type="button" onClick={callTanker} disabled={hud.tankerCallsLeft <= 0}>
                   加油
                 </button>
@@ -4706,7 +4854,7 @@ export default function Home() {
                   )}
                   {tutorialPrompt === "refuel" && !isTouchDevice && (
                     <div className="tutorial-art single-key-guide tanker-key" aria-hidden="true">
-                      <kbd>E</kbd>
+                      <kbd>T</kbd>
                     </div>
                   )}
                   <strong>{tutorialText}</strong>

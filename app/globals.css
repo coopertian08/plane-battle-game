@@ -300,6 +300,7 @@ button {
 
 .mini-meter,
 .fuel-meter,
+.ammo-meter,
 .hp-meter {
   width: 100%;
   overflow: hidden;
@@ -308,13 +309,15 @@ button {
 }
 
 .mini-meter,
-.fuel-meter {
+.fuel-meter,
+.ammo-meter {
   height: 6px;
   margin: 6px 0;
 }
 
 .mini-meter i,
 .fuel-meter i,
+.ammo-meter i,
 .hp-meter i {
   display: block;
   height: 100%;
@@ -328,6 +331,10 @@ button {
 
 .fuel-meter i {
   background: linear-gradient(90deg, #0ea5e9, #67e8f9);
+}
+
+.ammo-meter i {
+  background: linear-gradient(90deg, #facc15, #fb923c);
 }
 
 .battle-hp-meta {
@@ -1386,8 +1393,16 @@ button {
   box-shadow: 0 12px 30px rgba(0, 0, 0, 0.3);
 }
 
-.action-cluster button:first-child {
+.action-cluster .cannon-action {
+  background: linear-gradient(135deg, #a3e635, #22d3ee);
+}
+
+.action-cluster .tanker-action {
   background: linear-gradient(135deg, #facc15, #fb923c);
+}
+
+.action-cluster .missile-action {
+  background: rgba(248, 250, 252, 0.92);
 }
 
 @media (hover: none) and (pointer: coarse) {
