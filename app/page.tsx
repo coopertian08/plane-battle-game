@@ -14,6 +14,7 @@ function publicAssetUrl(fileName: string) {
 
 const AIRCRAFT_SPRITES_URL = publicAssetUrl("aircraft-sprites.png");
 const WEAPON_SPRITES_URL = publicAssetUrl("weapon-sprites.png");
+const SUPPORT_SPRITES_URL = publicAssetUrl("support-sprites.png");
 const TERRAIN_TILE_URL = publicAssetUrl("terrain-tile.png");
 const AIRPORT_RUNWAY_URL = publicAssetUrl("airport-runway.png");
 const TERRAIN_TILE_SIZE = 1600;
@@ -25,6 +26,8 @@ const USA_PLANE_IDS = ["f16", "f18", "f14", "f15", "f117", "f22", "f35"] as cons
 const PLANE_IDS = [...CHINA_PLANE_IDS, ...USA_PLANE_IDS] as const;
 const WEAPON_COLUMNS = 3;
 const WEAPON_ROWS = 2;
+const SUPPORT_COLUMNS = 4;
+const SUPPORT_ROWS = 1;
 const BEST_SCORE_KEY = "plane-battle-best-score";
 const CREDITS_KEY = "plane-battle-credits";
 const UPGRADES_KEY = "plane-battle-upgrades";
@@ -42,9 +45,10 @@ type PlaneFaction = "china" | "usa";
 type UpgradeKey = "firepower" | "missiles" | "armor" | "fuelTank" | "engine" | "speed" | "tanker";
 type EnemyKind = "scout" | "fighter" | "heavy" | "stealth" | "tank";
 type ProjectileOwner = "player" | "ally" | "enemy";
-type SpriteKey = PlaneId | "tanker";
+type SpriteKey = PlaneId;
 type WeaponSpriteKey = "playerTracer" | "enemyTracer" | "missile" | "heavyMissile" | "blast" | "smoke";
 type ShopPackId = "starter" | "arsenal" | "elite";
+type SupportSpriteKey = "tanker" | ShopPackId;
 
 type UpgradeState = Record<UpgradeKey, number>;
 type PlaneUpgradeState = Record<PlaneId, UpgradeState>;
@@ -75,6 +79,13 @@ type InventoryReward = {
   planeBlueprints?: Partial<PlaneBlueprintState>;
   upgradeBlueprints?: Partial<UpgradeBlueprintState>;
   giftPlane?: PlaneId;
+};
+
+type PackOpeningState = {
+  id: number;
+  packId: ShopPackId;
+  label: string;
+  rewardText: string;
 };
 
 type PlaneMeta = {
@@ -725,6 +736,13 @@ const weaponSpriteSlots: Record<WeaponSpriteKey, WeaponSpriteSlot> = {
   smoke: { col: 2, row: 1, crop: [29, 136, 289, 290] },
 };
 
+const supportSpriteSlots: Record<SupportSpriteKey, { col: number; row: number }> = {
+  tanker: { col: 0, row: 0 },
+  starter: { col: 1, row: 0 },
+  arsenal: { col: 2, row: 0 },
+  elite: { col: 3, row: 0 },
+};
+
 function getPlanePreviewClass(planeId: PlaneId) {
   return `plane-preview plane-${planeId}`;
 }
@@ -1208,6 +1226,19 @@ function localToWorld(aircraft: Aircraft, localX: number, localY: number) {
 
 function localToVisualWorld(aircraft: Aircraft, localX: number, localY: number) {
   return localToWorld(aircraft, localX, localY);
+}
+
+function getAircraftRenderScale(aircraft: Aircraft) {
+  const bank = Math.abs(clamp(aircraft.bank ?? 0, -1, 1));
+  return {
+    x: 1 - bank * 0.04,
+    y: 1 + bank * 0.018,
+  };
+}
+
+function localToRenderedWorld(aircraft: Aircraft, localX: number, localY: number) {
+  const scale = getAircraftRenderScale(aircraft);
+  return localToWorld(aircraft, localX * scale.x, localY * scale.y);
 }
 
 function getVisualLaunchAngle(aircraft: Aircraft, extraAngle = 0) {
@@ -2569,6 +2600,25 @@ function drawWeaponSprite(ctx: CanvasRenderingContext2D, sprites: HTMLImageEleme
   return true;
 }
 
+function drawSupportSprite(ctx: CanvasRenderingContext2D, sprites: HTMLImageElement | null, key: SupportSpriteKey, size: number) {
+  if (!sprites?.complete || sprites.naturalWidth <= 0) return false;
+  const slot = supportSpriteSlots[key];
+  const cellWidth = sprites.naturalWidth / SUPPORT_COLUMNS;
+  const cellHeight = sprites.naturalHeight / SUPPORT_ROWS;
+  ctx.drawImage(
+    sprites,
+    slot.col * cellWidth,
+    slot.row * cellHeight,
+    cellWidth,
+    cellHeight,
+    -size / 2,
+    -size / 2,
+    size,
+    size,
+  );
+  return true;
+}
+
 const singleEnginePorts: Partial<Record<PlaneId, EnginePort[]>> = {
   j10: [{ x: 0, y: 0.37, widthScale: 0.78, lengthScale: 0.94 }],
   f16: [{ x: 0, y: 0.265, widthScale: 0.78, lengthScale: 0.94 }],
@@ -2666,7 +2716,7 @@ function drawEngineFlame(
   const forward = direction(aircraft.angle);
   const back = { x: -forward.x, y: -forward.y };
   const perp = { x: -forward.y, y: forward.x };
-  const base = localToVisualWorld(aircraft, port.x, port.y);
+  const base = localToRenderedWorld(aircraft, port.x, port.y);
   const baseScreen = screenPoint(state, base.x, base.y);
   const tipScreen = screenPoint(state, base.x + back.x * length, base.y + back.y * length);
   const leftBase = screenPoint(state, base.x + perp.x * width * 0.3, base.y + perp.y * width * 0.3);
@@ -2838,44 +2888,6 @@ function drawJet(ctx: CanvasRenderingContext2D, planeId: PlaneId | EnemyKind, te
   ctx.restore();
 }
 
-function drawAircraftDepthOverlay(ctx: CanvasRenderingContext2D, size: number, bank: number) {
-  const intensity = clamp(0.08 + Math.abs(bank) * 0.26, 0, 0.34);
-  if (intensity <= 0.02) return;
-  const brightSide = bank >= 0 ? -1 : 1;
-  const darkSide = -brightSide;
-
-  ctx.save();
-  ctx.globalCompositeOperation = "screen";
-  ctx.globalAlpha = intensity;
-  ctx.fillStyle = "rgba(226, 242, 255, 0.72)";
-  ctx.beginPath();
-  ctx.moveTo(0, -size * 0.36);
-  ctx.lineTo(brightSide * size * 0.33, -size * 0.08);
-  ctx.lineTo(brightSide * size * 0.26, size * 0.24);
-  ctx.lineTo(brightSide * size * 0.04, size * 0.12);
-  ctx.closePath();
-  ctx.fill();
-
-  ctx.globalCompositeOperation = "multiply";
-  ctx.globalAlpha = intensity * 0.82;
-  ctx.fillStyle = "rgba(15, 23, 42, 0.48)";
-  ctx.beginPath();
-  ctx.moveTo(0, -size * 0.22);
-  ctx.lineTo(darkSide * size * 0.31, -size * 0.02);
-  ctx.lineTo(darkSide * size * 0.26, size * 0.26);
-  ctx.lineTo(darkSide * size * 0.02, size * 0.14);
-  ctx.closePath();
-  ctx.fill();
-
-  ctx.globalCompositeOperation = "screen";
-  ctx.globalAlpha = 0.12;
-  ctx.fillStyle = "rgba(219, 234, 254, 0.65)";
-  ctx.beginPath();
-  ctx.ellipse(0, -size * 0.2, size * 0.055, size * 0.16, 0, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.restore();
-}
-
 function drawAircraftAt(ctx: CanvasRenderingContext2D, state: GameState, aircraft: Aircraft, sprites: HTMLImageElement | null) {
   const p = screenPoint(state, aircraft.x, aircraft.y);
   const bank = clamp(aircraft.bank ?? 0, -1, 1);
@@ -2886,13 +2898,13 @@ function drawAircraftAt(ctx: CanvasRenderingContext2D, state: GameState, aircraf
   if (aircraft.side === "player" && (aircraft.invulnerable ?? 0) > 0) {
     ctx.globalAlpha = 0.62 + Math.sin(state.time * 26) * 0.2;
   }
-  ctx.scale(1 - Math.abs(bank) * 0.04, 1 + Math.abs(bank) * 0.018);
+  const renderScale = getAircraftRenderScale(aircraft);
+  ctx.scale(renderScale.x, renderScale.y);
   if (aircraft.side === "enemy") {
     ctx.globalAlpha *= clamp(1 - (aircraft.spawnWarmup ?? 0) / 1.9, 0.18, 1);
   }
   const drewSprite = drawAircraftSprite(ctx, sprites, getAircraftSpriteKey(aircraft.kind, aircraft.side, aircraft.variant), size);
   if (!drewSprite) drawJet(ctx, aircraft.kind, aircraft.side);
-  drawAircraftDepthOverlay(ctx, size, bank);
   ctx.restore();
 
   if (aircraft.side !== "player" && aircraft.hp < aircraft.maxHp) {
@@ -2926,13 +2938,13 @@ function drawWreckAt(ctx: CanvasRenderingContext2D, state: GameState, wreck: Wre
   ctx.restore();
 }
 
-function drawTanker(ctx: CanvasRenderingContext2D, state: GameState, tanker: Tanker, sprites: HTMLImageElement | null) {
+function drawTanker(ctx: CanvasRenderingContext2D, state: GameState, tanker: Tanker, supportSprites: HTMLImageElement | null) {
   const p = screenPoint(state, tanker.x, tanker.y);
   ctx.save();
   ctx.translate(p.x, p.y);
   ctx.rotate(tanker.angle + Math.PI / 2);
   ctx.globalAlpha = tanker.refueling ? 1 : 0.92;
-  if (drawAircraftSprite(ctx, sprites, "tanker", 172)) {
+  if (drawSupportSprite(ctx, supportSprites, "tanker", 224)) {
     if (tanker.refueling) {
       ctx.strokeStyle = "#0ea5e9";
       ctx.lineWidth = 3;
@@ -3044,6 +3056,7 @@ function drawGame(
   state: GameState,
   sprites: HTMLImageElement | null,
   weaponSprites: HTMLImageElement | null,
+  supportSprites: HTMLImageElement | null,
   terrain: HTMLImageElement | null,
   airport: HTMLImageElement | null,
 ) {
@@ -3062,7 +3075,7 @@ function drawGame(
     ctx.fill();
   }
 
-  for (const tanker of state.tankers) drawTanker(ctx, state, tanker, sprites);
+  for (const tanker of state.tankers) drawTanker(ctx, state, tanker, supportSprites);
   for (const wreck of state.wrecks) drawWreckAt(ctx, state, wreck, sprites);
   for (const ally of state.allies) drawEngineFlamesAt(ctx, state, ally);
   for (const enemy of state.enemies) drawEngineFlamesAt(ctx, state, enemy);
@@ -3159,6 +3172,7 @@ export default function Home() {
   const joystickRef = useRef<InputState>({ throttle: 0, turn: 0 });
   const spritesRef = useRef<HTMLImageElement | null>(null);
   const weaponSpritesRef = useRef<HTMLImageElement | null>(null);
+  const supportSpritesRef = useRef<HTMLImageElement | null>(null);
   const terrainRef = useRef<HTMLImageElement | null>(null);
   const airportRef = useRef<HTMLImageElement | null>(null);
   const animationRef = useRef<number | null>(null);
@@ -3173,6 +3187,7 @@ export default function Home() {
   const [inventory, setInventory] = useState<InventoryState>({ ...defaultInventory, planeBlueprints: { ...defaultPlaneBlueprints }, upgradeBlueprints: { ...defaultUpgradeBlueprints } });
   const [dailyCheckin, setDailyCheckin] = useState<DailyCheckinState>(defaultDailyCheckin);
   const [rewardNotice, setRewardNotice] = useState("");
+  const [packOpening, setPackOpening] = useState<PackOpeningState | null>(null);
   const [homeTab, setHomeTab] = useState<HomeTab>("battle");
   const [joystick, setJoystick] = useState({ x: 0, y: 0, active: false });
   const upgrades = planeUpgrades[selectedPlane] ?? defaultUpgrades;
@@ -3228,6 +3243,12 @@ export default function Home() {
       weaponSpritesRef.current = weaponImage;
     };
 
+    const supportImage = new Image();
+    supportImage.src = SUPPORT_SPRITES_URL;
+    supportImage.onload = () => {
+      supportSpritesRef.current = supportImage;
+    };
+
     const terrainImage = new Image();
     terrainImage.src = TERRAIN_TILE_URL;
     terrainImage.onload = () => {
@@ -3242,6 +3263,7 @@ export default function Home() {
     return () => {
       aircraftImage.onload = null;
       weaponImage.onload = null;
+      supportImage.onload = null;
       terrainImage.onload = null;
       airportImage.onload = null;
     };
@@ -3442,11 +3464,23 @@ export default function Home() {
       setCredits(nextCredits);
       setInventory(nextInventory);
       setRewardNotice(`${pack.label}：${formatReward(reward)}`);
+      setPackOpening({
+        id: Date.now(),
+        packId: pack.id,
+        label: pack.label,
+        rewardText: formatReward(reward),
+      });
       saveCredits(nextCredits);
       saveInventory(nextInventory);
     },
     [credits, inventory],
   );
+
+  useEffect(() => {
+    if (!packOpening) return;
+    const timer = window.setTimeout(() => setPackOpening(null), 4200);
+    return () => window.clearTimeout(timer);
+  }, [packOpening]);
 
   const togglePause = useCallback(() => {
     const state = gameRef.current;
@@ -3535,7 +3569,7 @@ export default function Home() {
         context.setTransform(dpr, 0, 0, dpr, 0, 0);
         context.clearRect(0, 0, width, height);
         context.setTransform(dpr * scale, 0, 0, dpr * scale, dpr * offsetX, dpr * offsetY);
-        drawGame(context, state, spritesRef.current, weaponSpritesRef.current, terrainRef.current, airportRef.current);
+        drawGame(context, state, spritesRef.current, weaponSpritesRef.current, supportSpritesRef.current, terrainRef.current, airportRef.current);
         context.setTransform(1, 0, 0, 1, 0, 0);
       }
 
@@ -3864,21 +3898,33 @@ export default function Home() {
                     </>
                   )}
                   {homeTab === "shop" && (
-                    <div className="shop-list" aria-label="商店礼包">
-                      {shopPacks.map((pack) => (
-                        <button
-                          className="shop-card"
-                          type="button"
-                          key={pack.id}
-                          onClick={() => buyShopPack(pack.id)}
-                          disabled={credits < pack.cost}
-                        >
-                          <span>{pack.label}</span>
-                          <em>{pack.description}</em>
-                          <strong>{pack.cost} 战功</strong>
-                        </button>
-                      ))}
-                    </div>
+                    <>
+                      {packOpening && (
+                        <div className="pack-opening" key={packOpening.id} aria-live="polite">
+                          <div className={`supply-crate crate-${packOpening.packId} is-opening`} aria-hidden="true" />
+                          <div className="pack-opening-result">
+                            <span>{packOpening.label}</span>
+                            <strong>{packOpening.rewardText}</strong>
+                          </div>
+                        </div>
+                      )}
+                      <div className="shop-list" aria-label="商店礼包">
+                        {shopPacks.map((pack) => (
+                          <button
+                            className="shop-card"
+                            type="button"
+                            key={pack.id}
+                            onClick={() => buyShopPack(pack.id)}
+                            disabled={credits < pack.cost}
+                          >
+                            <i className={`supply-crate crate-${pack.id}`} aria-hidden="true" />
+                            <span>{pack.label}</span>
+                            <em>{pack.description}</em>
+                            <strong>{pack.cost} 战功</strong>
+                          </button>
+                        ))}
+                      </div>
+                    </>
                   )}
                   {homeTab === "inventory" && (
                     <div className="warehouse-grid" aria-label="蓝图仓库">

@@ -51,7 +51,7 @@ test("server-renders the plane battle game shell", async () => {
 });
 
 test("keeps the finished game free of starter preview code", async () => {
-  const [css, page, layout, packageJson, exportScript, pagesWorkflow, sprites, weaponSprites, terrainTile, airportRunway] = await Promise.all([
+  const [css, page, layout, packageJson, exportScript, pagesWorkflow, sprites, weaponSprites, supportSprites, terrainTile, airportRunway] = await Promise.all([
     readFile(new URL("../app/globals.css", import.meta.url), "utf8"),
     readFile(new URL("../app/page.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/layout.tsx", import.meta.url), "utf8"),
@@ -60,6 +60,7 @@ test("keeps the finished game free of starter preview code", async () => {
     readFile(new URL("../.github/workflows/pages.yml", import.meta.url), "utf8"),
     readFile(new URL("../public/aircraft-sprites.png", import.meta.url)),
     readFile(new URL("../public/weapon-sprites.png", import.meta.url)),
+    readFile(new URL("../public/support-sprites.png", import.meta.url)),
     readFile(new URL("../public/terrain-tile.png", import.meta.url)),
     readFile(new URL("../public/airport-runway.png", import.meta.url)),
   ]);
@@ -68,24 +69,29 @@ test("keeps the finished game free of starter preview code", async () => {
   assert.match(page, /VIEW_HEIGHT = 800/);
   assert.ok(sprites.length > 100_000);
   assert.ok(weaponSprites.length > 50_000);
+  assert.ok(supportSprites.length > 50_000);
   assert.ok(terrainTile.length > 100_000);
   assert.ok(airportRunway.length > 100_000);
   assert.match(page, /function publicAssetUrl/);
   assert.match(page, /AIRCRAFT_SPRITES_URL = publicAssetUrl\("aircraft-sprites\.png"\)/);
   assert.match(page, /WEAPON_SPRITES_URL = publicAssetUrl\("weapon-sprites\.png"\)/);
+  assert.match(page, /SUPPORT_SPRITES_URL = publicAssetUrl\("support-sprites\.png"\)/);
   assert.match(page, /TERRAIN_TILE_URL = publicAssetUrl\("terrain-tile\.png"\)/);
   assert.match(page, /AIRPORT_RUNWAY_URL = publicAssetUrl\("airport-runway\.png"\)/);
   assert.match(page, /CHINA_PLANE_IDS = \["j8", "j10", "j11", "j15", "j16", "j20", "j35"\]/);
   assert.match(page, /USA_PLANE_IDS = \["f16", "f18", "f14", "f15", "f117", "f22", "f35"\]/);
-  assert.match(page, /type SpriteKey = PlaneId \| "tanker"/);
+  assert.match(page, /type SpriteKey = PlaneId/);
   assert.match(page, /type WeaponSpriteKey/);
+  assert.match(page, /type SupportSpriteKey = "tanker" \| ShopPackId/);
   assert.match(page, /spriteSlots/);
   assert.match(page, /weaponSpriteSlots/);
+  assert.match(page, /supportSpriteSlots/);
   assert.match(page, /drawAircraftSprite/);
   assert.match(page, /const drawWidth = size \* \(cellWidth \/ cellHeight\)/);
   assert.match(page, /drawWeaponSprite/);
+  assert.match(page, /drawSupportSprite/);
   assert.match(page, /drawEngineFlame/);
-  assert.match(page, /drawAircraftDepthOverlay/);
+  assert.doesNotMatch(page, /drawAircraftDepthOverlay/);
   assert.match(page, /type EnginePort/);
   assert.match(page, /singleEnginePorts/);
   assert.match(page, /twinEnginePorts/);
@@ -264,8 +270,10 @@ test("keeps the finished game free of starter preview code", async () => {
   assert.match(page, /showBattleUi/);
   assert.match(page, /drawEngineFlamesAt/);
   assert.match(page, /localToVisualWorld/);
+  assert.match(page, /localToRenderedWorld/);
+  assert.match(page, /getAircraftRenderScale/);
   assert.match(page, /return localToWorld\(aircraft, localX, localY\)/);
-  assert.match(page, /const base = localToVisualWorld\(aircraft, port\.x, port\.y\)/);
+  assert.match(page, /const base = localToRenderedWorld\(aircraft, port\.x, port\.y\)/);
   assert.match(page, /const length = size \* \(0\.14 \+ thrust \* 0\.22\) \* \(port\.lengthScale \?\? 1\)/);
   assert.match(page, /const width = size \* \(0\.036 \+ thrust \* 0\.022\) \* \(port\.widthScale \?\? 1\)/);
   assert.match(page, /const forward = direction\(aircraft\.angle\)/);
@@ -302,7 +310,8 @@ test("keeps the finished game free of starter preview code", async () => {
   assert.match(page, /state\.phase = "running"/);
   assert.match(page, /getVisualLaunchAngle/);
   assert.doesNotMatch(page, /drawAircraftRollDepth/);
-  assert.match(page, /ctx\.scale\(1 - Math\.abs\(bank\) \* 0\.04, 1 \+ Math\.abs\(bank\) \* 0\.018\)/);
+  assert.match(page, /const renderScale = getAircraftRenderScale\(aircraft\)/);
+  assert.match(page, /ctx\.scale\(renderScale\.x, renderScale\.y\)/);
   assert.doesNotMatch(page, /ctx\.quadraticCurveTo\(0, size \* 0\.42, size \* 0\.22, size \* 0\.12\)/);
   assert.match(page, /const noseY = -size \* 0\.43/);
   assert.match(page, /const origin = localToWorld\(aircraft, port\.x, port\.y\)/);
@@ -367,6 +376,10 @@ test("keeps the finished game free of starter preview code", async () => {
   assert.match(css, /plane-preview/);
   assert.match(css, /menu-panel/);
   assert.match(css, /url\("\.\.\/aircraft-sprites\.png"\)/);
+  assert.match(css, /url\("\.\.\/support-sprites\.png"\)/);
+  assert.match(css, /supply-crate/);
+  assert.match(css, /crate-open/);
+  assert.match(css, /pack-opening/);
   assert.match(css, /background-size:\s*700% 200%/);
   assert.match(css, /width:\s*58px/);
   assert.match(css, /height:\s*116px/);
