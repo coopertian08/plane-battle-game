@@ -13,8 +13,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "飞机大战 1.0",
-  description: "飞机大战 1.0，一个适配电脑和手机的无限空战游戏。",
+  title: "飞机大战 1.01",
+  description: "飞机大战 1.01，一个适配电脑和手机的无限空战游戏。",
   icons: {
     icon: "/favicon.svg",
     shortcut: "/favicon.svg",

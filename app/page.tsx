@@ -38,8 +38,10 @@ const DAILY_CHECKIN_KEY = "plane-battle-daily-checkin";
 const PLANE_KEY = "plane-battle-selected-plane";
 const UNLOCKED_PLANES_KEY = "plane-battle-unlocked-planes";
 const CAMPAIGN_STAGE_KEY = "plane-battle-campaign-stage";
-const GAME_VERSION = "1.0";
+const GAME_VERSION = "1.01";
+const SAVE_SCHEMA_VERSION = "1.0";
 const SAVE_VERSION_KEY = "plane-battle-save-version";
+const TUTORIAL_KEY = "plane-battle-tutorial-1.01";
 const RESETTABLE_SAVE_KEYS = [
   BEST_SCORE_KEY,
   CREDITS_KEY,
@@ -54,6 +56,7 @@ const RESETTABLE_SAVE_KEYS = [
 type GamePhase = "menu" | "hangar" | "takeoff" | "running" | "paused" | "playerDying" | "over" | "stageClear";
 type GameMode = "endless" | "stage";
 type HomeTab = "battle" | "upgrade" | "shop" | "inventory";
+type TutorialKey = "controls" | "missile" | "refuel";
 type PlaneId = (typeof PLANE_IDS)[number];
 type PlaneFaction = (typeof FACTION_IDS)[number];
 type UpgradeKey = "firepower" | "missiles" | "armor" | "fuelTank" | "engine" | "speed" | "tanker";
@@ -349,6 +352,12 @@ const defaultInventory: InventoryState = {
 const defaultDailyCheckin: DailyCheckinState = {
   lastDate: "",
   streak: 0,
+};
+
+const defaultTutorialProgress: Record<TutorialKey, boolean> = {
+  controls: false,
+  missile: false,
+  refuel: false,
 };
 
 const defaultUnlockedPlanes: PlaneUnlockState = {
@@ -1192,12 +1201,32 @@ function readBestScore() {
 
 function ensureSaveVersion() {
   if (typeof window === "undefined") return false;
-  if (window.localStorage.getItem(SAVE_VERSION_KEY) === GAME_VERSION) return false;
+  if (window.localStorage.getItem(SAVE_VERSION_KEY) === SAVE_SCHEMA_VERSION) return false;
   for (const key of RESETTABLE_SAVE_KEYS) {
     window.localStorage.removeItem(key);
   }
-  window.localStorage.setItem(SAVE_VERSION_KEY, GAME_VERSION);
+  window.localStorage.setItem(SAVE_VERSION_KEY, SAVE_SCHEMA_VERSION);
   return true;
+}
+
+function readTutorialProgress() {
+  if (typeof window === "undefined") return { ...defaultTutorialProgress };
+  try {
+    const parsed = JSON.parse(window.localStorage.getItem(TUTORIAL_KEY) ?? "{}") as Partial<Record<TutorialKey, unknown>>;
+    return {
+      controls: Boolean(parsed.controls),
+      missile: Boolean(parsed.missile),
+      refuel: Boolean(parsed.refuel),
+    };
+  } catch {
+    return { ...defaultTutorialProgress };
+  }
+}
+
+function saveTutorialProgress(progress: Record<TutorialKey, boolean>) {
+  if (typeof window !== "undefined") {
+    window.localStorage.setItem(TUTORIAL_KEY, JSON.stringify(progress));
+  }
 }
 
 function saveBestScore(score: number) {
@@ -3651,6 +3680,8 @@ export default function Home() {
   const terrainRef = useRef<HTMLImageElement | null>(null);
   const airportRef = useRef<HTMLImageElement | null>(null);
   const animationRef = useRef<number | null>(null);
+  const tutorialProgressRef = useRef<Record<TutorialKey, boolean>>({ ...defaultTutorialProgress });
+  const tutorialPromptRef = useRef<TutorialKey | null>(null);
   const scaleRef = useRef({ scale: 1, offsetX: 0, offsetY: 0, dpr: 1, width: VIEW_WIDTH, height: VIEW_HEIGHT });
   const [phase, setPhase] = useState<GamePhase>("menu");
   const [hud, setHud] = useState<HudState>(initialHud);
@@ -3665,6 +3696,8 @@ export default function Home() {
   const [packOpening, setPackOpening] = useState<PackOpeningState | null>(null);
   const [homeTab, setHomeTab] = useState<HomeTab>("battle");
   const [joystick, setJoystick] = useState({ x: 0, y: 0, active: false });
+  const [isTouchDevice, setIsTouchDevice] = useState(false);
+  const [tutorialPrompt, setTutorialPrompt] = useState<TutorialKey | null>(null);
   const upgrades = planeUpgrades[selectedPlane] ?? defaultUpgrades;
 
   const resizeCanvas = useCallback(() => {
@@ -3703,6 +3736,46 @@ export default function Home() {
       turn: clamp(keyboard.turn + joystickRef.current.turn, -1, 1),
       throttle: clamp(keyboard.throttle + joystickRef.current.throttle, -1, 1),
     };
+  }, []);
+
+  const showTutorial = useCallback((key: TutorialKey) => {
+    if (tutorialProgressRef.current[key] || tutorialPromptRef.current) return;
+    tutorialPromptRef.current = key;
+    setTutorialPrompt(key);
+  }, []);
+
+  const dismissTutorial = useCallback((key = tutorialPromptRef.current) => {
+    if (!key) return;
+    const next = { ...tutorialProgressRef.current, [key]: true };
+    tutorialProgressRef.current = next;
+    tutorialPromptRef.current = null;
+    setTutorialPrompt(null);
+    saveTutorialProgress(next);
+  }, []);
+
+  const maybeShowContextTutorial = useCallback(
+    (state: GameState) => {
+      if (state.phase !== "running" || tutorialPromptRef.current) return;
+      if (!tutorialProgressRef.current.refuel && (state.player.fuel ?? 0) <= 0 && (state.player.tankerCallsLeft ?? 0) > 0) {
+        showTutorial("refuel");
+        return;
+      }
+      const readyForMissile =
+        (state.mode === "stage" && state.stage >= 2 && state.time > state.takeoffDuration + 4.8) ||
+        (state.mode === "endless" && state.time > state.takeoffDuration + 8.5);
+      if (!tutorialProgressRef.current.missile && readyForMissile && (state.player.missileAmmo ?? 0) > 0) {
+        showTutorial("missile");
+      }
+    },
+    [showTutorial],
+  );
+
+  useEffect(() => {
+    const query = window.matchMedia("(hover: none) and (pointer: coarse)");
+    const updatePointerType = () => setIsTouchDevice(query.matches);
+    updatePointerType();
+    query.addEventListener("change", updatePointerType);
+    return () => query.removeEventListener("change", updatePointerType);
   }, []);
 
   useEffect(() => {
@@ -3972,18 +4045,23 @@ export default function Home() {
     const state = gameRef.current;
     if (!state) return;
     fireMissile(state);
+    if (tutorialPromptRef.current === "missile") dismissTutorial("missile");
     syncHud();
-  }, [syncHud]);
+  }, [dismissTutorial, syncHud]);
 
   const callTanker = useCallback(() => {
     const state = gameRef.current;
     if (!state) return;
     requestRefuel(state);
+    if (tutorialPromptRef.current === "refuel") dismissTutorial("refuel");
     syncHud();
-  }, [syncHud]);
+  }, [dismissTutorial, syncHud]);
 
   useEffect(() => {
     const versionReset = ensureSaveVersion();
+    const storedTutorial = readTutorialProgress();
+    tutorialProgressRef.current = storedTutorial;
+    if (!storedTutorial.controls) showTutorial("controls");
     const storedUpgrades = readPlaneUpgrades();
     const storedUnlocked = readUnlockedPlanes();
     const storedStage = readCampaignStage();
@@ -4024,6 +4102,7 @@ export default function Home() {
       last = now;
       const previousPhase = state.phase;
       updateGame(state, dt, readInput());
+      maybeShowContextTutorial(state);
 
       if (state.phase === "stageClear" && !state.rewardClaimed) {
         state.rewardClaimed = true;
@@ -4075,7 +4154,7 @@ export default function Home() {
       observer.disconnect();
       if (animationRef.current !== null) cancelAnimationFrame(animationRef.current);
     };
-  }, [readInput, resizeCanvas]);
+  }, [maybeShowContextTutorial, readInput, resizeCanvas, showTutorial]);
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -4175,6 +4254,25 @@ export default function Home() {
       planes: planeCatalog.filter((item) => item.faction === "russia" && (unlockedPlanes[item.id] || inventory.planeBlueprints[item.id] > 0)),
     },
   ];
+  const tutorialIsPointer = isTouchDevice && (tutorialPrompt === "missile" || tutorialPrompt === "refuel");
+  const tutorialTitle =
+    tutorialPrompt === "controls"
+      ? "操作指南"
+      : tutorialPrompt === "missile"
+        ? "导弹已挂载"
+        : "燃油耗尽";
+  const tutorialText =
+    tutorialPrompt === "controls"
+      ? isTouchDevice
+        ? "用左下角摇杆操控战机：向上推加速，左右推动控制转向。"
+        : "用 WASD 操控战机：W 加速，S 减速，A / D 左右转向。"
+      : tutorialPrompt === "missile"
+        ? isTouchDevice
+          ? "导弹按钮在这里。"
+          : "按 Q 键释放追踪导弹。"
+        : isTouchDevice
+          ? "燃油不足时点这里呼叫加油机。"
+          : "燃油耗尽时按 E 键呼叫加油机。";
 
   return (
     <main className="game-shell">
@@ -4563,13 +4661,58 @@ export default function Home() {
                 </div>
               </div>
               <div className="action-cluster">
-                <button type="button" onClick={callTanker} disabled={hud.tankerCallsLeft <= 0}>
+                <button className="tanker-action" type="button" onClick={callTanker} disabled={hud.tankerCallsLeft <= 0}>
                   加油
                 </button>
-                <button type="button" onClick={useMissile} disabled={hud.missileAmmo <= 0}>
+                <button className="missile-action" type="button" onClick={useMissile} disabled={hud.missileAmmo <= 0}>
                   导弹
                 </button>
               </div>
+            </div>
+          )}
+
+          {tutorialPrompt && (
+            <div className={["tutorial-layer", tutorialIsPointer ? "is-pointer" : ""].filter(Boolean).join(" ")}>
+              {tutorialIsPointer ? (
+                <button
+                  className={["tutorial-arrow", tutorialPrompt].join(" ")}
+                  type="button"
+                  onClick={() => dismissTutorial(tutorialPrompt)}
+                  aria-label={tutorialText}
+                >
+                  <span>{tutorialText}</span>
+                  <i />
+                </button>
+              ) : (
+                <button className="tutorial-card" type="button" onClick={() => dismissTutorial(tutorialPrompt)}>
+                  <span>{tutorialTitle}</span>
+                  {tutorialPrompt === "controls" && isTouchDevice && (
+                    <div className="tutorial-art joystick-guide-art" aria-hidden="true">
+                      <i />
+                    </div>
+                  )}
+                  {tutorialPrompt === "controls" && !isTouchDevice && (
+                    <div className="tutorial-art keyboard-guide" aria-hidden="true">
+                      <kbd className="key-w">W</kbd>
+                      <kbd className="key-a">A</kbd>
+                      <kbd className="key-s">S</kbd>
+                      <kbd className="key-d">D</kbd>
+                    </div>
+                  )}
+                  {tutorialPrompt === "missile" && !isTouchDevice && (
+                    <div className="tutorial-art single-key-guide" aria-hidden="true">
+                      <kbd>Q</kbd>
+                    </div>
+                  )}
+                  {tutorialPrompt === "refuel" && !isTouchDevice && (
+                    <div className="tutorial-art single-key-guide tanker-key" aria-hidden="true">
+                      <kbd>E</kbd>
+                    </div>
+                  )}
+                  <strong>{tutorialText}</strong>
+                  <em>点击继续</em>
+                </button>
+              )}
             </div>
           )}
         </div>
