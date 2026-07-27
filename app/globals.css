@@ -80,7 +80,6 @@ button {
 .hud-strip,
 .radar-panel,
 .engine-panel,
-.boss-hp,
 .battle-hp {
   position: absolute;
   z-index: 4;
@@ -245,11 +244,6 @@ button {
   box-shadow: 0 0 8px rgba(248, 113, 113, 0.82);
 }
 
-.radar-blip.boss {
-  width: 9px;
-  height: 9px;
-}
-
 @keyframes radar-scan {
   to {
     transform: rotate(360deg);
@@ -264,7 +258,6 @@ button {
 .hud-strip span,
 .engine-panel span,
 .battle-hp-meta span,
-.boss-hp-meta span,
 .panel-score span,
 .main-plane-summary span,
 .hangar-summary span {
@@ -278,7 +271,6 @@ button {
 .hud-strip strong,
 .engine-panel strong,
 .battle-hp-meta strong,
-.boss-hp-meta strong,
 .panel-score strong,
 .main-plane-summary strong,
 .hangar-summary strong {
@@ -308,8 +300,7 @@ button {
 
 .mini-meter,
 .fuel-meter,
-.hp-meter,
-.boss-meter {
+.hp-meter {
   width: 100%;
   overflow: hidden;
   border-radius: 999px;
@@ -324,8 +315,7 @@ button {
 
 .mini-meter i,
 .fuel-meter i,
-.hp-meter i,
-.boss-meter i {
+.hp-meter i {
   display: block;
   height: 100%;
   border-radius: inherit;
@@ -340,30 +330,12 @@ button {
   background: linear-gradient(90deg, #0ea5e9, #67e8f9);
 }
 
-.boss-hp {
-  top: max(82px, calc(env(safe-area-inset-top) + 82px));
-  left: 50%;
-  width: min(360px, 48vw);
-  padding: 7px 10px 8px;
-  transform: translateX(-50%);
-  border-color: rgba(251, 113, 133, 0.42);
-}
-
-.boss-hp-meta,
 .battle-hp-meta {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
   margin-bottom: 5px;
-}
-
-.boss-meter {
-  height: 7px;
-}
-
-.boss-meter i {
-  background: linear-gradient(90deg, #fb7185, #f97316);
 }
 
 .battle-hp {
@@ -994,11 +966,6 @@ button {
   .engine-panel strong,
   .engine-panel small {
     font-size: 10px;
-  }
-
-  .boss-hp {
-    top: max(72px, calc(env(safe-area-inset-top) + 72px));
-    width: min(62vw, 250px);
   }
 
   .battle-hp {
