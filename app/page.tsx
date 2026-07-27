@@ -19,11 +19,13 @@ const TERRAIN_TILE_URL = publicAssetUrl("terrain-tile.png");
 const AIRPORT_RUNWAY_URL = publicAssetUrl("airport-runway.png");
 const TERRAIN_TILE_SIZE = 1600;
 const TAKEOFF_RUNWAY_WORLD_WIDTH = 4600;
-const SPRITE_COLUMNS = 7;
-const SPRITE_ROWS = 2;
-const CHINA_PLANE_IDS = ["j8", "j10", "j11", "j15", "j16", "j20", "j35"] as const;
-const USA_PLANE_IDS = ["f16", "f18", "f14", "f15", "f117", "f22", "f35"] as const;
-const PLANE_IDS = [...CHINA_PLANE_IDS, ...USA_PLANE_IDS] as const;
+const SPRITE_COLUMNS = 10;
+const SPRITE_ROWS = 3;
+const CHINA_PLANE_IDS = ["j7", "j8", "j10", "j11", "j15", "j16", "jh7", "j20", "j35", "fc31"] as const;
+const USA_PLANE_IDS = ["f4", "f5", "f14", "f15", "f16", "f18", "f22", "f35", "f117", "f18c"] as const;
+const RUSSIA_PLANE_IDS = ["mig21", "mig23", "mig29", "mig31", "mig35", "su27", "su30", "su33", "su35", "su57"] as const;
+const PLANE_IDS = [...CHINA_PLANE_IDS, ...USA_PLANE_IDS, ...RUSSIA_PLANE_IDS] as const;
+const FACTION_IDS = ["china", "usa", "russia"] as const;
 const WEAPON_COLUMNS = 3;
 const WEAPON_ROWS = 2;
 const SUPPORT_COLUMNS = 4;
@@ -41,7 +43,7 @@ type GamePhase = "menu" | "hangar" | "takeoff" | "running" | "paused" | "playerD
 type GameMode = "endless" | "stage";
 type HomeTab = "battle" | "upgrade" | "shop" | "inventory";
 type PlaneId = (typeof PLANE_IDS)[number];
-type PlaneFaction = "china" | "usa";
+type PlaneFaction = (typeof FACTION_IDS)[number];
 type UpgradeKey = "firepower" | "missiles" | "armor" | "fuelTank" | "engine" | "speed" | "tanker";
 type EnemyKind = "scout" | "fighter" | "heavy" | "stealth" | "tank";
 type ProjectileOwner = "player" | "ally" | "enemy";
@@ -77,6 +79,7 @@ type InventoryReward = {
   credits?: number;
   materials?: number;
   planeBlueprints?: Partial<PlaneBlueprintState>;
+  duplicateBlueprints?: Partial<PlaneBlueprintState>;
   upgradeBlueprints?: Partial<UpgradeBlueprintState>;
   giftPlane?: PlaneId;
 };
@@ -258,6 +261,7 @@ type GameState = {
   wrecks: Wreck[];
   floaters: Floater[];
   selectedPlane: PlaneId;
+  opponentFaction: PlaneFaction;
   upgrades: UpgradeState;
   score: number;
   bestScore: number;
@@ -336,20 +340,36 @@ const defaultDailyCheckin: DailyCheckinState = {
 };
 
 const defaultUnlockedPlanes: PlaneUnlockState = {
+  j7: false,
   j8: true,
   j10: false,
   j11: false,
   j15: false,
   j16: false,
+  jh7: false,
   j20: false,
   j35: false,
-  f16: true,
-  f18: false,
+  fc31: false,
+  f4: false,
+  f5: false,
   f14: false,
   f15: false,
-  f117: false,
+  f16: true,
+  f18: false,
   f22: false,
   f35: false,
+  f117: false,
+  f18c: false,
+  mig21: false,
+  mig23: false,
+  mig29: true,
+  mig31: false,
+  mig35: false,
+  su27: false,
+  su30: false,
+  su33: false,
+  su35: false,
+  su57: false,
 };
 
 const initialHud: HudState = {
@@ -378,6 +398,24 @@ const initialHud: HudState = {
 };
 
 const planeCatalog: PlaneMeta[] = [
+  {
+    id: "j7",
+    faction: "china",
+    label: "歼-7G",
+    role: "轻型截击",
+    gunName: "Type 23-III",
+    gunCaliber: 23,
+    gunBarrels: 2,
+    gunMount: "belly",
+    unlockCost: 420,
+    baseHp: 168,
+    minSpeed: 174,
+    cruiseSpeed: 262,
+    maxSpeed: 398,
+    turnRate: 1.86,
+    fuel: 215,
+    damageBonus: -0.02,
+  },
   {
     id: "j8",
     faction: "china",
@@ -469,6 +507,24 @@ const planeCatalog: PlaneMeta[] = [
     damageBonus: 0.37,
   },
   {
+    id: "jh7",
+    faction: "china",
+    label: "歼轰-7A",
+    role: "重型突击",
+    gunName: "GSh-23 / Type 23-3",
+    gunCaliber: 23,
+    gunBarrels: 2,
+    gunMount: "belly",
+    unlockCost: 2480,
+    baseHp: 336,
+    minSpeed: 166,
+    cruiseSpeed: 286,
+    maxSpeed: 440,
+    turnRate: 1.68,
+    fuel: 372,
+    damageBonus: 0.4,
+  },
+  {
     id: "j20",
     faction: "china",
     label: "歼-20",
@@ -505,40 +561,58 @@ const planeCatalog: PlaneMeta[] = [
     damageBonus: 0.52,
   },
   {
-    id: "f16",
+    id: "fc31",
+    faction: "china",
+    label: "FC-31",
+    role: "隐身外贸",
+    gunName: "内置航炮",
+    gunCaliber: 25,
+    gunBarrels: 1,
+    gunMount: "belly",
+    unlockCost: 4600,
+    baseHp: 372,
+    minSpeed: 190,
+    cruiseSpeed: 332,
+    maxSpeed: 538,
+    turnRate: 2.22,
+    fuel: 392,
+    damageBonus: 0.58,
+  },
+  {
+    id: "f4",
     faction: "usa",
-    label: "F-16C",
-    role: "轻型多用途",
+    label: "F-4E",
+    role: "经典重型",
     gunName: "M61A1 Vulcan",
     gunCaliber: 20,
     gunBarrels: 1,
-    gunMount: "leftIntake",
-    unlockCost: 0,
-    baseHp: 188,
-    minSpeed: 176,
-    cruiseSpeed: 286,
-    maxSpeed: 438,
-    turnRate: 2.04,
-    fuel: 240,
-    damageBonus: 0.05,
+    gunMount: "belly",
+    unlockCost: 460,
+    baseHp: 178,
+    minSpeed: 166,
+    cruiseSpeed: 266,
+    maxSpeed: 420,
+    turnRate: 1.52,
+    fuel: 252,
+    damageBonus: 0,
   },
   {
-    id: "f18",
+    id: "f5",
     faction: "usa",
-    label: "F/A-18E",
-    role: "舰载多用途",
-    gunName: "M61A2 Vulcan",
+    label: "F-5E",
+    role: "轻型格斗",
+    gunName: "M39A3",
     gunCaliber: 20,
-    gunBarrels: 1,
+    gunBarrels: 2,
     gunMount: "belly",
-    unlockCost: 780,
-    baseHp: 228,
-    minSpeed: 168,
-    cruiseSpeed: 278,
-    maxSpeed: 430,
-    turnRate: 1.96,
-    fuel: 274,
-    damageBonus: 0.14,
+    unlockCost: 620,
+    baseHp: 182,
+    minSpeed: 176,
+    cruiseSpeed: 274,
+    maxSpeed: 414,
+    turnRate: 2.06,
+    fuel: 230,
+    damageBonus: 0.04,
   },
   {
     id: "f14",
@@ -577,22 +651,40 @@ const planeCatalog: PlaneMeta[] = [
     damageBonus: 0.28,
   },
   {
-    id: "f117",
+    id: "f16",
     faction: "usa",
-    label: "F-117A",
-    role: "隐身突击",
-    gunName: "内部武器舱",
-    gunCaliber: 25,
+    label: "F-16C",
+    role: "轻型多用途",
+    gunName: "M61A1 Vulcan",
+    gunCaliber: 20,
+    gunBarrels: 1,
+    gunMount: "leftIntake",
+    unlockCost: 0,
+    baseHp: 188,
+    minSpeed: 176,
+    cruiseSpeed: 286,
+    maxSpeed: 438,
+    turnRate: 2.04,
+    fuel: 240,
+    damageBonus: 0.05,
+  },
+  {
+    id: "f18",
+    faction: "usa",
+    label: "F/A-18E",
+    role: "舰载多用途",
+    gunName: "M61A2 Vulcan",
+    gunCaliber: 20,
     gunBarrels: 1,
     gunMount: "belly",
-    unlockCost: 2250,
-    baseHp: 318,
-    minSpeed: 160,
-    cruiseSpeed: 260,
-    maxSpeed: 405,
-    turnRate: 1.58,
-    fuel: 348,
-    damageBonus: 0.36,
+    unlockCost: 780,
+    baseHp: 228,
+    minSpeed: 168,
+    cruiseSpeed: 278,
+    maxSpeed: 430,
+    turnRate: 1.96,
+    fuel: 274,
+    damageBonus: 0.14,
   },
   {
     id: "f22",
@@ -629,6 +721,222 @@ const planeCatalog: PlaneMeta[] = [
     turnRate: 2.06,
     fuel: 372,
     damageBonus: 0.48,
+  },
+  {
+    id: "f117",
+    faction: "usa",
+    label: "F-117A",
+    role: "隐身突击",
+    gunName: "内部武器舱",
+    gunCaliber: 25,
+    gunBarrels: 1,
+    gunMount: "belly",
+    unlockCost: 2250,
+    baseHp: 318,
+    minSpeed: 160,
+    cruiseSpeed: 260,
+    maxSpeed: 405,
+    turnRate: 1.58,
+    fuel: 348,
+    damageBonus: 0.36,
+  },
+  {
+    id: "f18c",
+    faction: "usa",
+    label: "F/A-18C",
+    role: "舰载格斗",
+    gunName: "M61A1 Vulcan",
+    gunCaliber: 20,
+    gunBarrels: 1,
+    gunMount: "belly",
+    unlockCost: 980,
+    baseHp: 220,
+    minSpeed: 170,
+    cruiseSpeed: 276,
+    maxSpeed: 422,
+    turnRate: 2,
+    fuel: 268,
+    damageBonus: 0.12,
+  },
+  {
+    id: "mig21",
+    faction: "russia",
+    label: "MiG-21bis",
+    role: "轻型截击",
+    gunName: "GSh-23L",
+    gunCaliber: 23,
+    gunBarrels: 2,
+    gunMount: "belly",
+    unlockCost: 420,
+    baseHp: 166,
+    minSpeed: 176,
+    cruiseSpeed: 264,
+    maxSpeed: 402,
+    turnRate: 1.9,
+    fuel: 214,
+    damageBonus: -0.02,
+  },
+  {
+    id: "mig23",
+    faction: "russia",
+    label: "MiG-23MLD",
+    role: "变后掠截击",
+    gunName: "GSh-23L",
+    gunCaliber: 23,
+    gunBarrels: 2,
+    gunMount: "belly",
+    unlockCost: 720,
+    baseHp: 206,
+    minSpeed: 174,
+    cruiseSpeed: 276,
+    maxSpeed: 434,
+    turnRate: 1.72,
+    fuel: 258,
+    damageBonus: 0.1,
+  },
+  {
+    id: "mig29",
+    faction: "russia",
+    label: "MiG-29SMT",
+    role: "前线空优",
+    gunName: "GSh-30-1",
+    gunCaliber: 30,
+    gunBarrels: 1,
+    gunMount: "rightRoot",
+    unlockCost: 0,
+    baseHp: 210,
+    minSpeed: 178,
+    cruiseSpeed: 284,
+    maxSpeed: 450,
+    turnRate: 2.04,
+    fuel: 246,
+    damageBonus: 0.08,
+  },
+  {
+    id: "mig31",
+    faction: "russia",
+    label: "MiG-31BM",
+    role: "高速截击",
+    gunName: "GSh-6-23",
+    gunCaliber: 23,
+    gunBarrels: 2,
+    gunMount: "rightRoot",
+    unlockCost: 1320,
+    baseHp: 292,
+    minSpeed: 184,
+    cruiseSpeed: 306,
+    maxSpeed: 504,
+    turnRate: 1.48,
+    fuel: 352,
+    damageBonus: 0.24,
+  },
+  {
+    id: "mig35",
+    faction: "russia",
+    label: "MiG-35",
+    role: "多用途格斗",
+    gunName: "GSh-30-1",
+    gunCaliber: 30,
+    gunBarrels: 1,
+    gunMount: "rightRoot",
+    unlockCost: 1540,
+    baseHp: 246,
+    minSpeed: 178,
+    cruiseSpeed: 292,
+    maxSpeed: 462,
+    turnRate: 2.08,
+    fuel: 278,
+    damageBonus: 0.2,
+  },
+  {
+    id: "su27",
+    faction: "russia",
+    label: "Su-27SM",
+    role: "重型空优",
+    gunName: "GSh-30-1",
+    gunCaliber: 30,
+    gunBarrels: 1,
+    gunMount: "rightRoot",
+    unlockCost: 1180,
+    baseHp: 270,
+    minSpeed: 168,
+    cruiseSpeed: 286,
+    maxSpeed: 452,
+    turnRate: 1.84,
+    fuel: 310,
+    damageBonus: 0.22,
+  },
+  {
+    id: "su30",
+    faction: "russia",
+    label: "Su-30SM",
+    role: "双座多用途",
+    gunName: "GSh-30-1",
+    gunCaliber: 30,
+    gunBarrels: 1,
+    gunMount: "rightRoot",
+    unlockCost: 1780,
+    baseHp: 304,
+    minSpeed: 166,
+    cruiseSpeed: 288,
+    maxSpeed: 456,
+    turnRate: 1.86,
+    fuel: 342,
+    damageBonus: 0.3,
+  },
+  {
+    id: "su33",
+    faction: "russia",
+    label: "Su-33",
+    role: "重型舰载",
+    gunName: "GSh-30-1",
+    gunCaliber: 30,
+    gunBarrels: 1,
+    gunMount: "rightRoot",
+    unlockCost: 2140,
+    baseHp: 318,
+    minSpeed: 164,
+    cruiseSpeed: 282,
+    maxSpeed: 440,
+    turnRate: 1.78,
+    fuel: 354,
+    damageBonus: 0.34,
+  },
+  {
+    id: "su35",
+    faction: "russia",
+    label: "Su-35S",
+    role: "超机动空优",
+    gunName: "GSh-30-1",
+    gunCaliber: 30,
+    gunBarrels: 1,
+    gunMount: "rightRoot",
+    unlockCost: 2720,
+    baseHp: 334,
+    minSpeed: 176,
+    cruiseSpeed: 304,
+    maxSpeed: 490,
+    turnRate: 2.16,
+    fuel: 362,
+    damageBonus: 0.42,
+  },
+  {
+    id: "su57",
+    faction: "russia",
+    label: "Su-57",
+    role: "隐身空优",
+    gunName: "9A1-4071K",
+    gunCaliber: 30,
+    gunBarrels: 1,
+    gunMount: "rightRoot",
+    unlockCost: 3950,
+    baseHp: 358,
+    minSpeed: 190,
+    cruiseSpeed: 324,
+    maxSpeed: 524,
+    turnRate: 2.18,
+    fuel: 382,
+    damageBonus: 0.52,
   },
 ];
 
@@ -711,20 +1019,36 @@ const shopPacks: { id: ShopPackId; label: string; description: string; cost: num
 ];
 
 const spriteSlots: Partial<Record<SpriteKey, { col: number; row: number }>> = {
-  j8: { col: 0, row: 0 },
-  j10: { col: 1, row: 0 },
-  j11: { col: 2, row: 0 },
-  j15: { col: 3, row: 0 },
-  j16: { col: 4, row: 0 },
-  j20: { col: 5, row: 0 },
-  j35: { col: 6, row: 0 },
-  f16: { col: 0, row: 1 },
-  f18: { col: 1, row: 1 },
+  j7: { col: 0, row: 0 },
+  j8: { col: 1, row: 0 },
+  j10: { col: 2, row: 0 },
+  j11: { col: 3, row: 0 },
+  j15: { col: 4, row: 0 },
+  j16: { col: 5, row: 0 },
+  jh7: { col: 6, row: 0 },
+  j20: { col: 7, row: 0 },
+  j35: { col: 8, row: 0 },
+  fc31: { col: 9, row: 0 },
+  f4: { col: 0, row: 1 },
+  f5: { col: 1, row: 1 },
   f14: { col: 2, row: 1 },
   f15: { col: 3, row: 1 },
-  f117: { col: 4, row: 1 },
-  f22: { col: 5, row: 1 },
-  f35: { col: 6, row: 1 },
+  f16: { col: 4, row: 1 },
+  f18: { col: 5, row: 1 },
+  f22: { col: 6, row: 1 },
+  f35: { col: 7, row: 1 },
+  f117: { col: 8, row: 1 },
+  f18c: { col: 9, row: 1 },
+  mig21: { col: 0, row: 2 },
+  mig23: { col: 1, row: 2 },
+  mig29: { col: 2, row: 2 },
+  mig31: { col: 3, row: 2 },
+  mig35: { col: 4, row: 2 },
+  su27: { col: 5, row: 2 },
+  su30: { col: 6, row: 2 },
+  su33: { col: 7, row: 2 },
+  su35: { col: 8, row: 2 },
+  su57: { col: 9, row: 2 },
 };
 
 const weaponSpriteSlots: Record<WeaponSpriteKey, WeaponSpriteSlot> = {
@@ -787,11 +1111,28 @@ function getPlaneMeta(planeId: PlaneId) {
 }
 
 function getFactionLabel(faction: PlaneFaction) {
-  return faction === "china" ? "中国" : "美国";
+  if (faction === "china") return "中国";
+  if (faction === "usa") return "美国";
+  return "俄罗斯";
 }
 
 function getPlaneIdsByFaction(faction: PlaneFaction): readonly PlaneId[] {
-  return faction === "china" ? CHINA_PLANE_IDS : USA_PLANE_IDS;
+  if (faction === "china") return CHINA_PLANE_IDS;
+  if (faction === "usa") return USA_PLANE_IDS;
+  return RUSSIA_PLANE_IDS;
+}
+
+function getOtherFactions(faction: PlaneFaction) {
+  return FACTION_IDS.filter((item) => item !== faction);
+}
+
+function getRandomOpponentFaction(planeId: PlaneId): PlaneFaction {
+  const options = getOtherFactions(getPlaneMeta(planeId).faction);
+  return options[Math.floor(Math.random() * options.length)] ?? "usa";
+}
+
+function formatOpponentPool(faction: PlaneFaction) {
+  return getOtherFactions(faction).map(getFactionLabel).join(" / ");
 }
 
 function getPlaneTier(planeId: PlaneId) {
@@ -803,8 +1144,8 @@ function getRadarRange(planeId: PlaneId) {
   return 1750 + getPlaneTier(planeId) * 420;
 }
 
-function getOpponentFaction(planeId: PlaneId): PlaneFaction {
-  return getPlaneMeta(planeId).faction === "china" ? "usa" : "china";
+function getOpponentFaction(state: GameState): PlaneFaction {
+  return state.opponentFaction;
 }
 
 function isPlaneId(kind: Aircraft["kind"]): kind is PlaneId {
@@ -984,12 +1325,16 @@ function saveUnlockedPlanes(unlocked: PlaneUnlockState) {
   }
 }
 
+function getFirstUnlockedPlane(unlocked: PlaneUnlockState) {
+  return PLANE_IDS.find((planeId) => unlocked[planeId]) ?? "j8";
+}
+
 function readSelectedPlane(unlocked: PlaneUnlockState) {
   if (typeof window === "undefined") return "j8" as PlaneId;
   const stored = window.localStorage.getItem(PLANE_KEY);
   const legacyMap: Record<string, PlaneId> = { falcon: "j8", vanguard: "j10", raptor: "j15" };
   const planeId = ((stored && legacyMap[stored]) || stored || "j8") as PlaneId;
-  return PLANE_IDS.includes(planeId) && unlocked[planeId] ? planeId : "j8";
+  return PLANE_IDS.includes(planeId) && unlocked[planeId] ? planeId : getFirstUnlockedPlane(unlocked);
 }
 
 function saveSelectedPlane(planeId: PlaneId) {
@@ -1025,6 +1370,66 @@ function canClaimDaily(daily: DailyCheckinState) {
   return daily.lastDate !== getTodayKey();
 }
 
+function getDuplicateBlueprintConversion(planeId: PlaneId, amount: number) {
+  const tier = getPlaneTier(planeId);
+  const count = Math.max(0, Math.floor(amount));
+  return {
+    credits: count * (95 + tier * 36),
+    materials: count * (4 + Math.ceil(tier * 1.6)),
+  };
+}
+
+function settleInventoryReward(inventory: InventoryState, reward: InventoryReward, unlocked: PlaneUnlockState) {
+  const settled: InventoryReward = {
+    credits: Math.max(0, Math.floor(reward.credits ?? 0)),
+    materials: Math.max(0, Math.floor(reward.materials ?? 0)),
+    planeBlueprints: {},
+    duplicateBlueprints: {},
+    upgradeBlueprints: { ...reward.upgradeBlueprints },
+    giftPlane: reward.giftPlane,
+  };
+
+  for (const planeId of PLANE_IDS) {
+    const amount = Math.max(0, Math.floor(reward.planeBlueprints?.[planeId] ?? 0));
+    if (amount <= 0) continue;
+    if (unlocked[planeId]) {
+      const conversion = getDuplicateBlueprintConversion(planeId, amount);
+      settled.credits = (settled.credits ?? 0) + conversion.credits;
+      settled.materials = (settled.materials ?? 0) + conversion.materials;
+      settled.duplicateBlueprints = { ...settled.duplicateBlueprints, [planeId]: amount };
+    } else {
+      settled.planeBlueprints = { ...settled.planeBlueprints, [planeId]: (settled.planeBlueprints?.[planeId] ?? 0) + amount };
+    }
+  }
+
+  return {
+    inventory: addRewardToInventory(inventory, settled),
+    reward: settled,
+  };
+}
+
+function convertUnlockedPlaneBlueprints(inventory: InventoryState, unlocked: PlaneUnlockState) {
+  const reward: InventoryReward = { credits: 0, materials: 0, planeBlueprints: {}, duplicateBlueprints: {}, upgradeBlueprints: {} };
+  const next: InventoryState = {
+    materials: inventory.materials,
+    planeBlueprints: { ...inventory.planeBlueprints },
+    upgradeBlueprints: { ...inventory.upgradeBlueprints },
+  };
+
+  for (const planeId of PLANE_IDS) {
+    const amount = Math.max(0, Math.floor(next.planeBlueprints[planeId] ?? 0));
+    if (!unlocked[planeId] || amount <= 0) continue;
+    const conversion = getDuplicateBlueprintConversion(planeId, amount);
+    reward.credits = (reward.credits ?? 0) + conversion.credits;
+    reward.materials = (reward.materials ?? 0) + conversion.materials;
+    reward.duplicateBlueprints = { ...reward.duplicateBlueprints, [planeId]: amount };
+    next.planeBlueprints[planeId] = 0;
+  }
+
+  next.materials += Math.max(0, Math.floor(reward.materials ?? 0));
+  return { inventory: next, reward };
+}
+
 function addRewardToInventory(inventory: InventoryState, reward: InventoryReward) {
   const next: InventoryState = {
     materials: inventory.materials + Math.max(0, Math.floor(reward.materials ?? 0)),
@@ -1055,7 +1460,7 @@ function getPlaneUnlockRequirement(planeId: PlaneId) {
   return {
     credits: plane.unlockCost,
     materials: tier >= 2 ? 10 + Math.max(0, tier - 2) * 14 : 0,
-    planeBlueprints: tier === 0 ? 0 : 1,
+    planeBlueprints: plane.unlockCost <= 0 ? 0 : 1,
   };
 }
 
@@ -1150,6 +1555,10 @@ function formatReward(reward: InventoryReward) {
   for (const planeId of PLANE_IDS) {
     const amount = reward.planeBlueprints?.[planeId] ?? 0;
     if (amount > 0) parts.push(`${amount} ${getPlaneMeta(planeId).label}蓝图`);
+  }
+  for (const planeId of PLANE_IDS) {
+    const amount = reward.duplicateBlueprints?.[planeId] ?? 0;
+    if (amount > 0) parts.push(`${amount} ${getPlaneMeta(planeId).label}重复蓝图已转换`);
   }
   for (const meta of upgradeCatalog) {
     const amount = reward.upgradeBlueprints?.[meta.key] ?? 0;
@@ -1327,6 +1736,7 @@ function createGameState(
   const maxHp = getMaxHp(upgrades, selectedPlane);
   const maxFuel = getMaxFuel(upgrades, selectedPlane);
   const speedStats = getSpeedStats(upgrades, selectedPlane);
+  const playerRadius = isStealthPlane(selectedPlane) ? 33 : isHeavyPlane(selectedPlane) ? 32 : 30;
   const state: GameState = {
     phase: "menu",
     mode,
@@ -1345,7 +1755,7 @@ function createGameState(
       hp: maxHp,
       maxHp,
       fireTimer: 0,
-      radius: selectedPlane === "j20" ? 33 : selectedPlane === "j15" ? 32 : 30,
+      radius: playerRadius,
       heat: 8,
       fuel: maxFuel,
       maxFuel,
@@ -1364,6 +1774,7 @@ function createGameState(
     wrecks: [],
     floaters: [],
     selectedPlane,
+    opponentFaction: getRandomOpponentFaction(selectedPlane),
     upgrades,
     score: 0,
     bestScore,
@@ -1391,7 +1802,7 @@ function createGameState(
       state.player.angle,
       Math.round(maxHp * 0.62),
       speedStats.cruiseSpeed * 0.96,
-      selectedPlane === "j20" ? 29 : selectedPlane === "j15" ? 28 : 27,
+      isStealthPlane(selectedPlane) ? 29 : isHeavyPlane(selectedPlane) ? 28 : 27,
     );
     ally.wingSlot = index;
     state.allies.push(ally);
@@ -1788,12 +2199,12 @@ function chooseMissileTarget(state: GameState, shooter: Vector & { angle: number
 }
 
 function getEnemyVariantForKind(state: GameState, kind: EnemyKind, seed = 0): PlaneId {
-  const opponentIds = getPlaneIdsByFaction(getOpponentFaction(state.selectedPlane));
+  const opponentIds = getPlaneIdsByFaction(getOpponentFaction(state));
   const last = opponentIds.length - 1;
   if (kind === "stealth") return opponentIds[Math.max(0, last - (seed % 2))] ?? opponentIds[0];
-  if (kind === "tank" || kind === "heavy") return opponentIds[Math.min(3, last)] ?? opponentIds[0];
-  if (kind === "fighter") return opponentIds[Math.min(1 + (seed % 2), last)] ?? opponentIds[0];
-  return opponentIds[0];
+  if (kind === "tank" || kind === "heavy") return opponentIds[Math.min(3 + (seed % 3), last)] ?? opponentIds[0];
+  if (kind === "fighter") return opponentIds[Math.min(1 + (seed % 4), last)] ?? opponentIds[0];
+  return opponentIds[seed % Math.min(3, opponentIds.length)] ?? opponentIds[0];
 }
 
 function destroyEnemy(state: GameState, enemy: Aircraft) {
@@ -2538,12 +2949,21 @@ function getAircraftSpriteKey(kind: Aircraft["kind"], side: Aircraft["side"], va
   return isPlaneId(kind) ? kind : "j8";
 }
 
+function isStealthPlane(planeId: PlaneId) {
+  return ["j20", "j35", "fc31", "f22", "f35", "f117", "su57"].includes(planeId);
+}
+
+function isHeavyPlane(planeId: PlaneId) {
+  return ["j11", "j15", "j16", "jh7", "f4", "f14", "f15", "mig31", "su27", "su30", "su33", "su35"].includes(planeId);
+}
+
 function getAircraftDrawSize(aircraft: Aircraft) {
   if (aircraft.kind === "tank") return 116;
   if (aircraft.kind === "heavy") return 112;
   if (aircraft.kind === "stealth") return 106;
-  const stealthFrame = aircraft.kind === "j20" || aircraft.kind === "j35" || aircraft.kind === "f22" || aircraft.kind === "f35" || aircraft.kind === "f117";
-  const heavyFrame = aircraft.kind === "j11" || aircraft.kind === "j15" || aircraft.kind === "j16" || aircraft.kind === "f14" || aircraft.kind === "f15";
+  const planeKind = isPlaneId(aircraft.kind) ? aircraft.kind : aircraft.variant;
+  const stealthFrame = planeKind ? isStealthPlane(planeKind) : false;
+  const heavyFrame = planeKind ? isHeavyPlane(planeKind) : false;
   if (aircraft.side === "ally") return stealthFrame ? 98 : heavyFrame ? 94 : 90;
   if (aircraft.side === "enemy") return aircraft.kind === "scout" ? 90 : 98;
   if (stealthFrame) return 116;
@@ -2611,9 +3031,12 @@ function drawSupportSprite(ctx: CanvasRenderingContext2D, sprites: HTMLImageElem
 }
 
 const singleEnginePorts: Partial<Record<PlaneId, EnginePort[]>> = {
+  j7: [{ x: 0, y: 0.392, widthScale: 0.72, lengthScale: 0.92 }],
   j10: [{ x: 0, y: 0.37, widthScale: 0.78, lengthScale: 0.94 }],
   f16: [{ x: 0, y: 0.265, widthScale: 0.78, lengthScale: 0.94 }],
   f35: [{ x: 0, y: 0.235, widthScale: 0.78, lengthScale: 0.94 }],
+  mig21: [{ x: 0, y: 0.39, widthScale: 0.72, lengthScale: 0.9 }],
+  mig23: [{ x: 0, y: 0.382, widthScale: 0.72, lengthScale: 0.9 }],
 };
 
 const twinEnginePorts: Partial<Record<PlaneId, EnginePort[]>> = {
@@ -2633,6 +3056,10 @@ const twinEnginePorts: Partial<Record<PlaneId, EnginePort[]>> = {
     { x: -0.035, y: 0.394, widthScale: 0.5 },
     { x: 0.035, y: 0.394, widthScale: 0.5 },
   ],
+  jh7: [
+    { x: -0.036, y: 0.378, widthScale: 0.5 },
+    { x: 0.036, y: 0.378, widthScale: 0.5 },
+  ],
   j20: [
     { x: -0.029, y: 0.372, widthScale: 0.5 },
     { x: 0.029, y: 0.372, widthScale: 0.5 },
@@ -2640,6 +3067,18 @@ const twinEnginePorts: Partial<Record<PlaneId, EnginePort[]>> = {
   j35: [
     { x: -0.024, y: 0.392, widthScale: 0.48 },
     { x: 0.024, y: 0.392, widthScale: 0.48 },
+  ],
+  fc31: [
+    { x: -0.026, y: 0.382, widthScale: 0.48 },
+    { x: 0.026, y: 0.382, widthScale: 0.48 },
+  ],
+  f4: [
+    { x: -0.03, y: 0.365, widthScale: 0.48, lengthScale: 0.86 },
+    { x: 0.03, y: 0.365, widthScale: 0.48, lengthScale: 0.86 },
+  ],
+  f5: [
+    { x: -0.028, y: 0.334, widthScale: 0.46, lengthScale: 0.86 },
+    { x: 0.028, y: 0.334, widthScale: 0.46, lengthScale: 0.86 },
   ],
   f18: [
     { x: -0.033, y: 0.244, widthScale: 0.5 },
@@ -2660,6 +3099,42 @@ const twinEnginePorts: Partial<Record<PlaneId, EnginePort[]>> = {
   f22: [
     { x: -0.032, y: 0.265, widthScale: 0.5 },
     { x: 0.032, y: 0.265, widthScale: 0.5 },
+  ],
+  f18c: [
+    { x: -0.033, y: 0.252, widthScale: 0.5 },
+    { x: 0.033, y: 0.252, widthScale: 0.5 },
+  ],
+  mig29: [
+    { x: -0.035, y: 0.372, widthScale: 0.5 },
+    { x: 0.035, y: 0.372, widthScale: 0.5 },
+  ],
+  mig31: [
+    { x: -0.033, y: 0.388, widthScale: 0.5 },
+    { x: 0.033, y: 0.388, widthScale: 0.5 },
+  ],
+  mig35: [
+    { x: -0.034, y: 0.376, widthScale: 0.5 },
+    { x: 0.034, y: 0.376, widthScale: 0.5 },
+  ],
+  su27: [
+    { x: -0.037, y: 0.382, widthScale: 0.5 },
+    { x: 0.037, y: 0.382, widthScale: 0.5 },
+  ],
+  su30: [
+    { x: -0.037, y: 0.382, widthScale: 0.5 },
+    { x: 0.037, y: 0.382, widthScale: 0.5 },
+  ],
+  su33: [
+    { x: -0.037, y: 0.384, widthScale: 0.5 },
+    { x: 0.037, y: 0.384, widthScale: 0.5 },
+  ],
+  su35: [
+    { x: -0.037, y: 0.38, widthScale: 0.5 },
+    { x: 0.037, y: 0.38, widthScale: 0.5 },
+  ],
+  su57: [
+    { x: -0.033, y: 0.372, widthScale: 0.5 },
+    { x: 0.033, y: 0.372, widthScale: 0.5 },
   ],
 };
 
@@ -2745,11 +3220,11 @@ function drawEngineFlamesAt(ctx: CanvasRenderingContext2D, aircraft: Aircraft, b
 
 function drawJet(ctx: CanvasRenderingContext2D, planeId: PlaneId | EnemyKind, team: Aircraft["side"]) {
   const enemy = team === "enemy";
-  const naval = planeId === "j15" || planeId === "f18" || planeId === "f14";
-  const delta = planeId === "j10" || planeId === "f16";
-  const slender = planeId === "j8" || planeId === "f117";
-  const heavyFrame = planeId === "j11" || planeId === "j16" || planeId === "f14" || planeId === "f15";
-  const stealthFrame = planeId === "j20" || planeId === "j35" || planeId === "f22" || planeId === "f35" || planeId === "f117" || planeId === "stealth";
+  const naval = planeId === "j15" || planeId === "f18" || planeId === "f18c" || planeId === "f14" || planeId === "su33";
+  const delta = planeId === "j7" || planeId === "j10" || planeId === "f16" || planeId === "mig21" || planeId === "mig23";
+  const slender = planeId === "j8" || planeId === "f117" || planeId === "mig31";
+  const heavyFrame = isPlaneId(planeId) ? isHeavyPlane(planeId) : planeId === "heavy" || planeId === "tank";
+  const stealthFrame = (isPlaneId(planeId) && isStealthPlane(planeId)) || planeId === "stealth";
   const body = enemy ? "#9f1239" : stealthFrame ? "#334155" : heavyFrame ? "#64748b" : naval ? "#475569" : delta ? "#64748b" : "#d1d5db";
   const dark = enemy ? "#450a0a" : "#1f2937";
   const stripe = enemy ? "#fca5a5" : "#ef4444";
@@ -3250,7 +3725,7 @@ export default function Home() {
   const startRun = useCallback(
     (mode: GameMode, stageNumber = campaignStage) => {
       const safeStage = mode === "stage" ? normalizeStageNumber(stageNumber) : 1;
-      const safePlane = planeCatalog.some((planeItem) => planeItem.id === selectedPlane) ? selectedPlane : "j8";
+      const safePlane = planeCatalog.some((planeItem) => planeItem.id === selectedPlane) && unlockedPlanes[selectedPlane] ? selectedPlane : getFirstUnlockedPlane(unlockedPlanes);
       const safeUpgrades = sanitizeUpgrades((planeUpgrades[safePlane] ?? defaultUpgrades) as Record<string, unknown>);
       let state: GameState;
       try {
@@ -3281,7 +3756,7 @@ export default function Home() {
       setPhase("takeoff");
       setHud(snapshot(state));
     },
-    [campaignStage, planeUpgrades, selectedPlane],
+    [campaignStage, planeUpgrades, selectedPlane, unlockedPlanes],
   );
 
   const startStageGame = useCallback(() => startRun("stage", campaignStage), [campaignStage, startRun]);
@@ -3418,14 +3893,15 @@ export default function Home() {
         }
       }
     }
-    const nextCredits = credits + Math.max(0, Math.floor(reward.credits ?? 0));
-    const nextInventory = addRewardToInventory(inventory, reward);
+    const settled = settleInventoryReward(inventory, reward, nextUnlocked);
+    const nextCredits = credits + Math.max(0, Math.floor(settled.reward.credits ?? 0));
+    const nextInventory = settled.inventory;
     const nextDaily = { lastDate: getTodayKey(), streak: day };
     setCredits(nextCredits);
     setInventory(nextInventory);
     setDailyCheckin(nextDaily);
     setUnlockedPlanes(nextUnlocked);
-    setRewardNotice(`签到第 ${day} 天：${formatReward(reward)}`);
+    setRewardNotice(`签到第 ${day} 天：${formatReward(settled.reward)}`);
     saveCredits(nextCredits);
     saveInventory(nextInventory);
     saveDailyCheckin(nextDaily);
@@ -3437,21 +3913,22 @@ export default function Home() {
       const pack = shopPacks.find((item) => item.id === packId);
       if (!pack || credits < pack.cost) return;
       const reward = rollShopPack(pack);
-      const nextCredits = credits - pack.cost + Math.max(0, Math.floor(reward.credits ?? 0));
-      const nextInventory = addRewardToInventory(inventory, reward);
+      const settled = settleInventoryReward(inventory, reward, unlockedPlanes);
+      const nextCredits = credits - pack.cost + Math.max(0, Math.floor(settled.reward.credits ?? 0));
+      const nextInventory = settled.inventory;
       setCredits(nextCredits);
       setInventory(nextInventory);
-      setRewardNotice(`${pack.label}：${formatReward(reward)}`);
+      setRewardNotice(`${pack.label}：${formatReward(settled.reward)}`);
       setPackOpening({
         id: Date.now(),
         packId: pack.id,
         label: pack.label,
-        rewardText: formatReward(reward),
+        rewardText: formatReward(settled.reward),
       });
       saveCredits(nextCredits);
       saveInventory(nextInventory);
     },
-    [credits, inventory],
+    [credits, inventory, unlockedPlanes],
   );
 
   useEffect(() => {
@@ -3487,14 +3964,23 @@ export default function Home() {
     const storedUpgrades = readPlaneUpgrades();
     const storedUnlocked = readUnlockedPlanes();
     const storedStage = readCampaignStage();
-    const storedInventory = readInventory();
+    let storedInventory = readInventory();
     const storedDaily = readDailyCheckin();
+    let storedCredits = readCredits();
+    const duplicateSettlement = convertUnlockedPlaneBlueprints(storedInventory, storedUnlocked);
+    if ((duplicateSettlement.reward.credits ?? 0) > 0 || (duplicateSettlement.reward.materials ?? 0) > 0) {
+      storedInventory = duplicateSettlement.inventory;
+      storedCredits += Math.max(0, Math.floor(duplicateSettlement.reward.credits ?? 0));
+      saveInventory(storedInventory);
+      saveCredits(storedCredits);
+      setRewardNotice(`重复蓝图已转换：${formatReward(duplicateSettlement.reward)}`);
+    }
     const storedPlane = readSelectedPlane(storedUnlocked);
     setPlaneUpgrades(storedUpgrades);
     setUnlockedPlanes(storedUnlocked);
     setInventory(storedInventory);
     setDailyCheckin(storedDaily);
-    setCredits(readCredits());
+    setCredits(storedCredits);
     setCampaignStage(storedStage);
     setSelectedPlane(storedPlane);
     const initial = createGameState(readBestScore(), storedUpgrades[storedPlane] ?? defaultUpgrades, storedPlane);
@@ -3630,7 +4116,8 @@ export default function Home() {
   const showOver = phase === "over";
   const showStageClear = phase === "stageClear";
   const showPause = phase === "paused";
-  const totalPlaneBlueprints = PLANE_IDS.reduce((total, planeId) => total + inventory.planeBlueprints[planeId], 0);
+  const visibleBlueprintPlaneIds = PLANE_IDS.filter((planeId) => !unlockedPlanes[planeId] && inventory.planeBlueprints[planeId] > 0);
+  const totalPlaneBlueprints = visibleBlueprintPlaneIds.reduce((total, planeId) => total + inventory.planeBlueprints[planeId], 0);
   const nextDailyDay = getNextDailyDay(dailyCheckin);
   const dailyClaimable = canClaimDaily(dailyCheckin);
   const nextDailyReward = dailyRewards[nextDailyDay - 1] ?? dailyRewards[0];
@@ -3647,8 +4134,21 @@ export default function Home() {
     { id: "inventory", label: "仓库" },
   ];
   const hangarGroups: { faction: PlaneFaction; title: string; planes: PlaneMeta[] }[] = [
-    { faction: "china", title: "中国战斗机", planes: planeCatalog.filter((item) => item.faction === "china") },
-    { faction: "usa", title: "美国战斗机", planes: planeCatalog.filter((item) => item.faction === "usa") },
+    {
+      faction: "china",
+      title: "中国战斗机",
+      planes: planeCatalog.filter((item) => item.faction === "china" && (unlockedPlanes[item.id] || inventory.planeBlueprints[item.id] > 0)),
+    },
+    {
+      faction: "usa",
+      title: "美国战斗机",
+      planes: planeCatalog.filter((item) => item.faction === "usa" && (unlockedPlanes[item.id] || inventory.planeBlueprints[item.id] > 0)),
+    },
+    {
+      faction: "russia",
+      title: "俄罗斯战斗机",
+      planes: planeCatalog.filter((item) => item.faction === "russia" && (unlockedPlanes[item.id] || inventory.planeBlueprints[item.id] > 0)),
+    },
   ];
 
   return (
@@ -3812,7 +4312,7 @@ export default function Home() {
                             <div className="faction-title">
                               <span>{group.title}</span>
                               <small>
-                                出击时对阵{getFactionLabel(group.faction === "china" ? "usa" : "china")}机群
+                                出击时随机对阵 {formatOpponentPool(group.faction)} 机群
                               </small>
                             </div>
                             <div className="plane-grid">
@@ -3906,15 +4406,19 @@ export default function Home() {
                   )}
                   {homeTab === "inventory" && (
                     <div className="warehouse-grid" aria-label="蓝图仓库">
-                      {PLANE_IDS.map((planeId) => (
-                        <div className="warehouse-card" key={planeId}>
-                          <div className={getPlanePreviewClass(planeId)} aria-hidden="true">
-                            <i />
+                      {visibleBlueprintPlaneIds.length > 0 ? (
+                        visibleBlueprintPlaneIds.map((planeId) => (
+                          <div className="warehouse-card" key={planeId}>
+                            <div className={getPlanePreviewClass(planeId)} aria-hidden="true">
+                              <i />
+                            </div>
+                            <span>{getPlaneMeta(planeId).label}蓝图</span>
+                            <strong>{inventory.planeBlueprints[planeId]}</strong>
                           </div>
-                          <span>{getPlaneMeta(planeId).label}蓝图</span>
-                          <strong>{inventory.planeBlueprints[planeId]}</strong>
-                        </div>
-                      ))}
+                        ))
+                      ) : (
+                        <div className="warehouse-empty">暂无飞机蓝图，去商店开启补给箱获取。</div>
+                      )}
                     </div>
                   )}
                 </>

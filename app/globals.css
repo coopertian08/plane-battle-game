@@ -497,15 +497,14 @@ button {
 }
 
 .home-tabs {
-  position: sticky;
-  bottom: -1px;
+  position: relative;
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 6px;
   margin-top: 12px;
   padding: 10px 0 1px;
   border-top: 1px solid rgba(148, 163, 184, 0.2);
-  background: linear-gradient(180deg, rgba(15, 23, 42, 0), rgba(15, 23, 42, 0.94) 28%);
+  background: rgba(15, 23, 42, 0.42);
 }
 
 .home-tabs button {
@@ -915,6 +914,20 @@ button {
   font-size: 18px;
 }
 
+.warehouse-empty {
+  grid-column: 1 / -1;
+  min-height: 112px;
+  display: grid;
+  place-items: center;
+  border: 1px dashed rgba(186, 230, 253, 0.28);
+  border-radius: 8px;
+  background: rgba(15, 23, 42, 0.2);
+  color: rgba(226, 232, 240, 0.82);
+  font-size: 13px;
+  font-weight: 900;
+  text-align: center;
+}
+
 .upgrade-card em,
 .shop-card em {
   display: block;
@@ -932,7 +945,7 @@ button {
   margin: 0 auto 5px;
   background-image: url("../aircraft-sprites.png");
   background-repeat: no-repeat;
-  background-size: 700% 200%;
+  background-size: 1000% 300%;
 }
 
 .plane-preview::before,
@@ -941,12 +954,16 @@ button {
   display: none;
 }
 
-.plane-j8 {
+.plane-j7 {
   background-position: 0 0;
 }
 
+.plane-j8 {
+  background-position: 11.1111% 0;
+}
+
 .plane-j10 {
-  background-position: 16.6667% 0;
+  background-position: 22.2222% 0;
 }
 
 .plane-j11 {
@@ -954,46 +971,106 @@ button {
 }
 
 .plane-j15 {
-  background-position: 50% 0;
+  background-position: 44.4444% 0;
 }
 
 .plane-j16 {
+  background-position: 55.5556% 0;
+}
+
+.plane-jh7 {
   background-position: 66.6667% 0;
 }
 
 .plane-j20 {
-  background-position: 83.3333% 0;
+  background-position: 77.7778% 0;
 }
 
 .plane-j35 {
+  background-position: 88.8889% 0;
+}
+
+.plane-fc31 {
   background-position: 100% 0;
 }
 
-.plane-f16 {
-  background-position: 0 100%;
+.plane-f4 {
+  background-position: 0 50%;
 }
 
-.plane-f18 {
-  background-position: 16.6667% 100%;
+.plane-f5 {
+  background-position: 11.1111% 50%;
 }
 
 .plane-f14 {
-  background-position: 33.3333% 100%;
+  background-position: 22.2222% 50%;
 }
 
 .plane-f15 {
-  background-position: 50% 100%;
+  background-position: 33.3333% 50%;
 }
 
-.plane-f117 {
-  background-position: 66.6667% 100%;
+.plane-f16 {
+  background-position: 44.4444% 50%;
+}
+
+.plane-f18 {
+  background-position: 55.5556% 50%;
 }
 
 .plane-f22 {
-  background-position: 83.3333% 100%;
+  background-position: 66.6667% 50%;
 }
 
 .plane-f35 {
+  background-position: 77.7778% 50%;
+}
+
+.plane-f117 {
+  background-position: 88.8889% 50%;
+}
+
+.plane-f18c {
+  background-position: 100% 50%;
+}
+
+.plane-mig21 {
+  background-position: 0 100%;
+}
+
+.plane-mig23 {
+  background-position: 11.1111% 100%;
+}
+
+.plane-mig29 {
+  background-position: 22.2222% 100%;
+}
+
+.plane-mig31 {
+  background-position: 33.3333% 100%;
+}
+
+.plane-mig35 {
+  background-position: 44.4444% 100%;
+}
+
+.plane-su27 {
+  background-position: 55.5556% 100%;
+}
+
+.plane-su30 {
+  background-position: 66.6667% 100%;
+}
+
+.plane-su33 {
+  background-position: 77.7778% 100%;
+}
+
+.plane-su35 {
+  background-position: 88.8889% 100%;
+}
+
+.plane-su57 {
   background-position: 100% 100%;
 }
 
