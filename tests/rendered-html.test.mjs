@@ -53,7 +53,24 @@ test("server-renders the plane battle game shell", async () => {
 });
 
 test("keeps the finished game free of starter preview code", async () => {
-  const [css, page, layout, packageJson, exportScript, pagesWorkflow, sprites, j20Cutout, j20Source, weaponSprites, supportSprites, terrainTile, airportRunway] = await Promise.all([
+  const [
+    css,
+    page,
+    layout,
+    packageJson,
+    exportScript,
+    pagesWorkflow,
+    sprites,
+    j20Cutout,
+    j20Source,
+    ww2Sprites,
+    ww2SpritesSource,
+    weaponSprites,
+    supportSprites,
+    terrainTile,
+    storyTerrainTile,
+    airportRunway,
+  ] = await Promise.all([
     readFile(new URL("../app/globals.css", import.meta.url), "utf8"),
     readFile(new URL("../app/page.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/layout.tsx", import.meta.url), "utf8"),
@@ -63,9 +80,12 @@ test("keeps the finished game free of starter preview code", async () => {
     readFile(new URL("../public/aircraft-sprites.png", import.meta.url)),
     readFile(new URL("../public/j20-cutout.png", import.meta.url)),
     readFile(new URL("../public/j20-generated-source.png", import.meta.url)),
+    readFile(new URL("../public/ww2-aircraft-sprites.png", import.meta.url)),
+    readFile(new URL("../public/ww2-aircraft-sprites-source.png", import.meta.url)),
     readFile(new URL("../public/weapon-sprites.png", import.meta.url)),
     readFile(new URL("../public/support-sprites.png", import.meta.url)),
     readFile(new URL("../public/terrain-tile.png", import.meta.url)),
+    readFile(new URL("../public/story-terrain-tile.png", import.meta.url)),
     readFile(new URL("../public/airport-runway.png", import.meta.url)),
   ]);
 
@@ -74,15 +94,20 @@ test("keeps the finished game free of starter preview code", async () => {
   assert.ok(sprites.length > 100_000);
   assert.ok(j20Cutout.length > 50_000);
   assert.ok(j20Source.length > 100_000);
+  assert.ok(ww2Sprites.length > 500_000);
+  assert.ok(ww2SpritesSource.length > 500_000);
   assert.ok(weaponSprites.length > 50_000);
   assert.ok(supportSprites.length > 50_000);
   assert.ok(terrainTile.length > 100_000);
+  assert.ok(storyTerrainTile.length > 500_000);
   assert.ok(airportRunway.length > 100_000);
   assert.match(page, /function publicAssetUrl/);
   assert.match(page, /AIRCRAFT_SPRITES_URL = publicAssetUrl\("aircraft-sprites\.png"\)/);
+  assert.match(page, /WW2_AIRCRAFT_SPRITES_URL = publicAssetUrl\("ww2-aircraft-sprites\.png"\)/);
   assert.match(page, /WEAPON_SPRITES_URL = publicAssetUrl\("weapon-sprites\.png"\)/);
   assert.match(page, /SUPPORT_SPRITES_URL = publicAssetUrl\("support-sprites\.png"\)/);
   assert.match(page, /TERRAIN_TILE_URL = publicAssetUrl\("terrain-tile\.png"\)/);
+  assert.match(page, /STORY_TERRAIN_TILE_URL = publicAssetUrl\("story-terrain-tile\.png"\)/);
   assert.match(page, /AIRPORT_RUNWAY_URL = publicAssetUrl\("airport-runway\.png"\)/);
   assert.match(page, /CHINA_PLANE_IDS = \["j7", "j8", "j10", "j11", "j15", "j16", "jh7", "j20", "j35", "fc31"\]/);
   assert.match(page, /USA_PLANE_IDS = \["f4", "f5", "f14", "f15", "f16", "f18", "f22", "f35", "f117", "f18c"\]/);
@@ -92,9 +117,11 @@ test("keeps the finished game free of starter preview code", async () => {
   assert.match(page, /type WeaponSpriteKey/);
   assert.match(page, /type SupportSpriteKey = "tanker" \| ShopPackId/);
   assert.match(page, /spriteSlots/);
+  assert.match(page, /ww2SpriteSlots/);
   assert.match(page, /weaponSpriteSlots/);
   assert.match(page, /supportSpriteSlots/);
   assert.match(page, /drawAircraftSprite/);
+  assert.match(page, /drawWw2AircraftSprite/);
   assert.match(page, /const drawWidth = size \* \(cellWidth \/ cellHeight\)/);
   assert.match(page, /drawWeaponSprite/);
   assert.match(page, /drawSupportSprite/);
@@ -109,15 +136,20 @@ test("keeps the finished game free of starter preview code", async () => {
   assert.match(page, /f22:\s*\[/);
   assert.match(page, /getAircraftDrawSize/);
   assert.match(page, /spritesRef/);
+  assert.match(page, /ww2SpritesRef/);
   assert.match(page, /weaponSpritesRef/);
   assert.match(page, /terrainRef/);
+  assert.match(page, /storyTerrainRef/);
   assert.match(page, /joystick-zone/);
   assert.match(page, /SPRITE_COLUMNS = 10/);
   assert.match(page, /SPRITE_ROWS = 3/);
+  assert.match(page, /WW2_SPRITE_COLUMNS = 5/);
+  assert.match(page, /WW2_SPRITE_ROWS = 2/);
   assert.match(page, /type PlaneId = \(typeof PLANE_IDS\)\[number\]/);
   assert.match(page, /type PlaneFaction = \(typeof FACTION_IDS\)\[number\]/);
   assert.match(page, /type GameMode = "endless" \| "stage" \| "story"/);
   assert.match(page, /type StoryFaction = "usa" \| "japan"/);
+  assert.match(page, /type Ww2SpriteKey = "usP40" \| "usF4f" \| "usSbd" \| "usB17" \| "usPby" \| "jpZero" \| "jpOscar" \| "jpVal" \| "jpBetty" \| "jpJake"/);
   assert.match(page, /type UpgradeKey = "firepower" \| "missiles" \| "armor" \| "fuelTank" \| "engine" \| "speed" \| "tanker" \| "ammo"/);
   assert.match(page, /type EnemyKind = "scout" \| "fighter" \| "heavy" \| "stealth" \| "tank"/);
   assert.match(page, /type PlaneUpgradeState/);
@@ -144,6 +176,12 @@ test("keeps the finished game free of starter preview code", async () => {
   assert.match(page, /saveTutorialProgress/);
   assert.match(page, /defaultStoryProgress/);
   assert.match(page, /storyCampaigns/);
+  assert.match(page, /playerSprite: "usP40"/);
+  assert.match(page, /enemyScoutSprite: "jpJake"/);
+  assert.match(page, /enemyHeavySprite: "jpBetty"/);
+  assert.match(page, /playerSprite: "jpZero"/);
+  assert.match(page, /enemyScoutSprite: "usPby"/);
+  assert.match(page, /enemyHeavySprite: "usB17"/);
   assert.match(page, /readStoryProgress/);
   assert.match(page, /saveStoryProgress/);
   assert.match(page, /title:\s*"战争前夕"/);
@@ -264,7 +302,7 @@ test("keeps the finished game free of starter preview code", async () => {
   assert.match(page, /chooseMissileTarget/);
   assert.match(page, /offBoresight < 2\.45 && dist < 3600/);
   assert.match(page, /fireMissile/);
-  assert.match(page, /missileAmmo:\s*4 \+ upgrades\.missiles \* 2/);
+  assert.match(page, /missileAmmo:\s*storyMission \? 0 : 4 \+ effectiveUpgrades\.missiles \* 2/);
   assert.match(page, /ammoReserve:\s*maxAmmoReserve/);
   assert.match(page, /magazineAmmo:\s*Math\.min\(magazineSize, maxAmmoReserve\)/);
   assert.match(page, /fuelEmptyLimit:\s*10/);
@@ -347,7 +385,7 @@ test("keeps the finished game free of starter preview code", async () => {
   assert.match(page, /getEnemyBurstProfile/);
   assert.match(page, /startEnemyBurst/);
   assert.match(page, /updateEnemyBurst/);
-  assert.match(page, /enemy\.spawnWarmup = randomBetween\(1\.15, 1\.9\)/);
+  assert.match(page, /enemy\.spawnWarmup = storyEntry \? randomBetween\(0\.45, 0\.9\) : randomBetween\(1\.15, 1\.9\)/);
   assert.match(page, /const warmingUp = \(enemy\.spawnWarmup \?\? 0\) > 0/);
   assert.match(page, /updateAllies/);
   assert.match(page, /getTakeoffFormationPoint/);
@@ -375,7 +413,9 @@ test("keeps the finished game free of starter preview code", async () => {
   assert.match(page, /getAircraftRenderScale/);
   assert.match(page, /return localToWorld\(aircraft, localX, localY\)/);
   assert.match(page, /const aircraftAlpha = ctx\.globalAlpha/);
-  assert.match(page, /drawEngineFlamesAt\(ctx, aircraft, aircraftAlpha\)/);
+  assert.match(page, /if \(!aircraft\.ww2Sprite\) drawEngineFlamesAt\(ctx, aircraft, aircraftAlpha\)/);
+  assert.match(page, /drawSky\(ctx, state, state\.mode === "story" \? storyTerrain \?\? terrain : terrain, airport\)/);
+  assert.match(page, /drawWreckAt\(ctx, state, wreck, sprites, ww2Sprites\)/);
   assert.match(page, /const baseX = port\.x/);
   assert.match(page, /const tipY = baseY \+ length/);
   assert.match(page, /const length = size \* \(0\.14 \+ thrust \* 0\.22\) \* \(port\.lengthScale \?\? 1\)/);
@@ -390,6 +430,9 @@ test("keeps the finished game free of starter preview code", async () => {
   assert.match(page, /function getStoryMission\(faction: StoryFaction, stage: number\)/);
   assert.match(page, /function getStoryFactionLabel\(faction: StoryFaction\)/);
   assert.match(page, /function advanceStoryProgress\(progress: StoryProgressState, faction: StoryFaction, completedStage: number\)/);
+  assert.match(page, /function getStoryEnemySprite\(mission: StoryMission \| null, kind: EnemyKind\)/);
+  assert.match(page, /function getStoryEnemyKind\(mission: StoryMission \| null, roll: number\): EnemyKind/);
+  assert.match(page, /function getStoryProxyPlane\(sprite\?: Ww2SpriteKey\): PlaneId/);
   assert.match(page, /storyMission \? storyMission\.target/);
   assert.match(page, /storyMission \? storyMission\.reward/);
   assert.match(page, /storyMission \? storyMission\.difficulty/);
@@ -402,10 +445,24 @@ test("keeps the finished game free of starter preview code", async () => {
   assert.match(page, /return 5 \+ Math\.min\(3, Math\.floor\(state\.score \/ 9000\)\)/);
   assert.match(page, /function getSpawnInterval\(state: GameState\)/);
   assert.match(page, /const wingmen = mode === "story" \? Math\.max\(2, getStageWingmen/);
+  assert.match(page, /const effectivePlane = storyMission \? getStoryProxyPlane\(storyMission\.playerSprite\) : selectedPlane/);
+  assert.match(page, /const effectiveUpgrades = storyMission \? \{ \.\.\.defaultUpgrades \} : upgrades/);
+  assert.match(page, /ww2Sprite: storyMission\?\.playerSprite/);
+  assert.match(page, /spawnTimer:\s*storyMission \? 0\.22 : 0\.85/);
+  assert.match(page, /state\.spawnTimer = state\.mode === "story" \? 0\.18 : getSpawnInterval\(state\)/);
   assert.match(page, /150 \+ Math\.max\(0, stage - 1\) \* 50/);
   assert.match(page, /stageKills/);
   assert.match(page, /state\.mode === "stage" \|\| state\.mode === "story"/);
   assert.match(page, /spawnRegularEnemy/);
+  assert.match(page, /state\.mode === "story"\s*\?\s*getStoryEnemyKind\(state\.storyMission, roll\)/);
+  assert.match(page, /const openingStoryKind: EnemyKind \| undefined/);
+  assert.match(page, /const storyEntry = state\.mode === "story"/);
+  assert.match(page, /const firstStoryContact = storyEntry && state\.stageKills === 0 && state\.enemies\.length === 0/);
+  assert.match(page, /state\.storyMission\?\.stage === 2\s*\?\s*"heavy"/);
+  assert.match(page, /state\.storyMission\?\.stage === 1\s*\?\s*"scout"/);
+  assert.match(page, /const entryDistance = storyEntry \? randomBetween\(140, 280\) : randomBetween\(360, 760\)/);
+  assert.match(page, /enemy\.spawnWarmup = storyEntry \? randomBetween\(0\.45, 0\.9\) : randomBetween\(1\.15, 1\.9\)/);
+  assert.match(page, /enemy\.ww2Sprite = storySprite/);
   assert.match(page, /\? "stealth"/);
   assert.match(page, /\? "heavy"/);
   assert.doesNotMatch(page, /Boss来袭|双机来袭/);
