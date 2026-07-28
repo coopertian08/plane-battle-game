@@ -29,7 +29,7 @@ test("server-renders the plane battle game shell", async () => {
   assert.match(response.headers.get("content-type") ?? "", /^text\/html\b/i);
 
   const html = await response.text();
-  assert.match(html, /<title>飞机大战 1\.05<\/title>/i);
+  assert.match(html, /<title>飞机大战 1\.12<\/title>/i);
   assert.match(html, /<canvas/i);
   assert.match(html, /飞机大战/);
   assert.match(html, /关卡出击/);
@@ -67,9 +67,12 @@ test("keeps the finished game free of starter preview code", async () => {
     ww2SpritesSource,
     weaponSprites,
     supportSprites,
+    groundTargetSprites,
+    groundTargetSpritesSource,
     terrainTile,
     storyTerrainTile,
     airportRunway,
+    airportRunwaySource,
   ] = await Promise.all([
     readFile(new URL("../app/globals.css", import.meta.url), "utf8"),
     readFile(new URL("../app/page.tsx", import.meta.url), "utf8"),
@@ -84,9 +87,12 @@ test("keeps the finished game free of starter preview code", async () => {
     readFile(new URL("../public/ww2-aircraft-sprites-source.png", import.meta.url)),
     readFile(new URL("../public/weapon-sprites.png", import.meta.url)),
     readFile(new URL("../public/support-sprites.png", import.meta.url)),
+    readFile(new URL("../public/ground-target-sprites.png", import.meta.url)),
+    readFile(new URL("../public/ground-target-sprites-source.png", import.meta.url)),
     readFile(new URL("../public/terrain-tile.png", import.meta.url)),
     readFile(new URL("../public/story-terrain-tile.png", import.meta.url)),
     readFile(new URL("../public/airport-runway.png", import.meta.url)),
+    readFile(new URL("../public/airport-runway-source.png", import.meta.url)),
   ]);
 
   assert.match(page, /VIEW_WIDTH = 1280/);
@@ -98,14 +104,18 @@ test("keeps the finished game free of starter preview code", async () => {
   assert.ok(ww2SpritesSource.length > 500_000);
   assert.ok(weaponSprites.length > 50_000);
   assert.ok(supportSprites.length > 50_000);
+  assert.ok(groundTargetSprites.length > 500_000);
+  assert.ok(groundTargetSpritesSource.length > 500_000);
   assert.ok(terrainTile.length > 100_000);
   assert.ok(storyTerrainTile.length > 500_000);
   assert.ok(airportRunway.length > 100_000);
+  assert.ok(airportRunwaySource.length > 100_000);
   assert.match(page, /function publicAssetUrl/);
   assert.match(page, /AIRCRAFT_SPRITES_URL = publicAssetUrl\("aircraft-sprites\.png"\)/);
   assert.match(page, /WW2_AIRCRAFT_SPRITES_URL = publicAssetUrl\("ww2-aircraft-sprites\.png"\)/);
   assert.match(page, /WEAPON_SPRITES_URL = publicAssetUrl\("weapon-sprites\.png"\)/);
   assert.match(page, /SUPPORT_SPRITES_URL = publicAssetUrl\("support-sprites\.png"\)/);
+  assert.match(page, /GROUND_TARGET_SPRITES_URL = publicAssetUrl\("ground-target-sprites\.png"\)/);
   assert.match(page, /TERRAIN_TILE_URL = publicAssetUrl\("terrain-tile\.png"\)/);
   assert.match(page, /STORY_TERRAIN_TILE_URL = publicAssetUrl\("story-terrain-tile\.png"\)/);
   assert.match(page, /AIRPORT_RUNWAY_URL = publicAssetUrl\("airport-runway\.png"\)/);
@@ -116,16 +126,23 @@ test("keeps the finished game free of starter preview code", async () => {
   assert.match(page, /type SpriteKey = PlaneId/);
   assert.match(page, /type WeaponSpriteKey/);
   assert.match(page, /type SupportSpriteKey = "tanker" \| ShopPackId/);
+  assert.match(page, /type GroundSpriteKey = GroundTargetKind/);
+  assert.match(page, /type GroundTargetKind = "carrier" \| "port" \| "aa" \| "command"/);
   assert.match(page, /spriteSlots/);
   assert.match(page, /ww2SpriteSlots/);
   assert.match(page, /weaponSpriteSlots/);
   assert.match(page, /supportSpriteSlots/);
+  assert.match(page, /groundTargetSpriteSlots/);
   assert.match(page, /drawAircraftSprite/);
   assert.match(page, /drawWw2AircraftSprite/);
   assert.match(page, /drawWw2PropellerBlur/);
   assert.match(page, /const drawWidth = size \* \(cellWidth \/ cellHeight\)/);
   assert.match(page, /drawWeaponSprite/);
   assert.match(page, /drawSupportSprite/);
+  assert.match(page, /drawGroundTargetSprite/);
+  assert.match(page, /drawGroundTargetAt/);
+  assert.match(page, /updateGroundTargets/);
+  assert.match(page, /state\.groundTargets\.length === 0/);
   assert.match(page, /drawEngineFlame/);
   assert.doesNotMatch(page, /drawAircraftDepthOverlay/);
   assert.match(page, /type EnginePort/);
@@ -138,6 +155,7 @@ test("keeps the finished game free of starter preview code", async () => {
   assert.match(page, /getAircraftDrawSize/);
   assert.match(page, /spritesRef/);
   assert.match(page, /ww2SpritesRef/);
+  assert.match(page, /groundSpritesRef/);
   assert.match(page, /weaponSpritesRef/);
   assert.match(page, /terrainRef/);
   assert.match(page, /storyTerrainRef/);
@@ -163,7 +181,7 @@ test("keeps the finished game free of starter preview code", async () => {
   assert.match(page, /CAMPAIGN_STAGE_KEY/);
   assert.match(page, /STORY_PROGRESS_KEY/);
   assert.match(page, /UNLOCKED_PLANES_KEY/);
-  assert.match(page, /GAME_VERSION = "1\.05"/);
+  assert.match(page, /GAME_VERSION = "1\.12"/);
   assert.match(page, /STORY_UNLOCK_STAGE = 10/);
   assert.match(page, /SAVE_SCHEMA_VERSION = "1\.0"/);
   assert.match(page, /SAVE_VERSION_KEY = "plane-battle-save-version"/);
@@ -566,7 +584,7 @@ test("keeps the finished game free of starter preview code", async () => {
   assert.doesNotMatch(page, /爆弹/);
   assert.doesNotMatch(page, /lives/);
   assert.doesNotMatch(page, /arrowleft|arrowright|arrowup|arrowdown/);
-  assert.match(layout, /title:\s*"飞机大战 1\.05"/);
+  assert.match(layout, /title:\s*"飞机大战 1\.12"/);
   assert.match(layout, /export const viewport/);
   assert.match(layout, /width:\s*"device-width"/);
   assert.match(layout, /initialScale:\s*1/);
@@ -650,7 +668,7 @@ test("keeps the finished game free of starter preview code", async () => {
   assert.match(css, /warehouse-grid/);
   assert.match(css, /warehouse-empty/);
   assert.match(css, /plane-card\.locked/);
-  assert.match(packageJson, /"version": "1\.0\.5"/);
+  assert.match(packageJson, /"version": "1\.0\.12"/);
   assert.match(packageJson, /"export:github-pages": "node scripts\/export-github-pages\.mjs"/);
   assert.match(exportScript, /dist", "github-pages"/);
   assert.match(exportScript, /GITHUB_REPOSITORY/);

@@ -16,6 +16,7 @@ const AIRCRAFT_SPRITES_URL = publicAssetUrl("aircraft-sprites.png");
 const WW2_AIRCRAFT_SPRITES_URL = publicAssetUrl("ww2-aircraft-sprites.png");
 const WEAPON_SPRITES_URL = publicAssetUrl("weapon-sprites.png");
 const SUPPORT_SPRITES_URL = publicAssetUrl("support-sprites.png");
+const GROUND_TARGET_SPRITES_URL = publicAssetUrl("ground-target-sprites.png");
 const TERRAIN_TILE_URL = publicAssetUrl("terrain-tile.png");
 const STORY_TERRAIN_TILE_URL = publicAssetUrl("story-terrain-tile.png");
 const AIRPORT_RUNWAY_URL = publicAssetUrl("airport-runway.png");
@@ -34,6 +35,8 @@ const WEAPON_COLUMNS = 3;
 const WEAPON_ROWS = 2;
 const SUPPORT_COLUMNS = 4;
 const SUPPORT_ROWS = 1;
+const GROUND_TARGET_COLUMNS = 2;
+const GROUND_TARGET_ROWS = 2;
 const BEST_SCORE_KEY = "plane-battle-best-score";
 const CREDITS_KEY = "plane-battle-credits";
 const UPGRADES_KEY = "plane-battle-upgrades";
@@ -43,7 +46,7 @@ const PLANE_KEY = "plane-battle-selected-plane";
 const UNLOCKED_PLANES_KEY = "plane-battle-unlocked-planes";
 const CAMPAIGN_STAGE_KEY = "plane-battle-campaign-stage";
 const STORY_PROGRESS_KEY = "plane-battle-story-progress";
-const GAME_VERSION = "1.05";
+const GAME_VERSION = "1.12";
 const STORY_UNLOCK_STAGE = 10;
 const SAVE_SCHEMA_VERSION = "1.0";
 const SAVE_VERSION_KEY = "plane-battle-save-version";
@@ -130,6 +133,8 @@ type StoryMission = {
   objective: string;
   target: number;
   reward: number;
+  rewardItems?: InventoryReward;
+  groundObjectives?: GroundObjectiveSpec[];
   difficulty: number;
   playerSprite: Ww2SpriteKey;
   enemyScoutSprite: Ww2SpriteKey;
@@ -189,6 +194,15 @@ type WeaponSpriteSlot = {
 type Vector = {
   x: number;
   y: number;
+};
+
+type GroundTargetKind = "carrier" | "port" | "aa" | "command";
+type GroundSpriteKey = GroundTargetKind;
+
+type GroundObjectiveSpec = {
+  kind: GroundTargetKind;
+  count?: number;
+  hp?: number;
 };
 
 type Aircraft = {
@@ -260,6 +274,25 @@ type Tanker = {
   exitAngle?: number;
 };
 
+type GroundTarget = {
+  id: number;
+  x: number;
+  y: number;
+  angle: number;
+  vx: number;
+  vy: number;
+  hp: number;
+  maxHp: number;
+  radius: number;
+  kind: GroundTargetKind;
+  fireTimer: number;
+  progressValue: number;
+  points: number;
+  destroyed?: boolean;
+  sinkTimer?: number;
+  maxSinkTimer?: number;
+};
+
 type Explosion = {
   id: number;
   x: number;
@@ -281,6 +314,8 @@ type Smoke = {
   maxLife: number;
   color?: string;
   opacity?: number;
+  rotation?: number;
+  wobble?: number;
 };
 
 type Wreck = {
@@ -327,6 +362,7 @@ type GameState = {
   player: Aircraft;
   allies: Aircraft[];
   enemies: Aircraft[];
+  groundTargets: GroundTarget[];
   bullets: Projectile[];
   tankers: Tanker[];
   explosions: Explosion[];
@@ -343,6 +379,7 @@ type GameState = {
   difficulty: number;
   spawnTimer: number;
   earnedCredits: number;
+  earnedRewardText: string;
   rewardClaimed: boolean;
   shake: number;
   time: number;
@@ -381,6 +418,7 @@ type HudState = {
   fuelEmptyTimer: number;
   fuelEmptyLimit: number;
   earnedCredits: number;
+  earnedRewardText: string;
   allies: number;
   radarRange: number;
   radarBlips: RadarBlip[];
@@ -447,6 +485,7 @@ const storyCampaigns: Record<StoryFaction, StoryMission[]> = {
       objective: "完成战备巡逻，确认异常机群并击退第一波侦察机。",
       target: 7,
       reward: 180,
+      rewardItems: { credits: 180, materials: 4 },
       difficulty: 1,
       playerSprite: "usP40",
       enemyScoutSprite: "jpJake",
@@ -461,6 +500,8 @@ const storyCampaigns: Record<StoryFaction, StoryMission[]> = {
       objective: "掩护港区撤离，拦截来袭轰炸编队。",
       target: 10,
       reward: 240,
+      rewardItems: { credits: 240, materials: 7, upgradeBlueprints: { armor: 1 } },
+      groundObjectives: [{ kind: "aa", count: 2, hp: 46 }],
       difficulty: 2,
       playerSprite: "usP40",
       enemyScoutSprite: "jpJake",
@@ -475,6 +516,8 @@ const storyCampaigns: Record<StoryFaction, StoryMission[]> = {
       objective: "搜索敌方航母编队，保护己方舰载机返航。",
       target: 12,
       reward: 300,
+      rewardItems: { credits: 300, materials: 9, upgradeBlueprints: { tanker: 1 } },
+      groundObjectives: [{ kind: "carrier", count: 1, hp: 210 }],
       difficulty: 3,
       playerSprite: "usF4f",
       enemyScoutSprite: "jpJake",
@@ -489,6 +532,8 @@ const storyCampaigns: Record<StoryFaction, StoryMission[]> = {
       objective: "突破护航机群，摧毁敌方航母甲板航空力量。",
       target: 15,
       reward: 380,
+      rewardItems: { credits: 380, materials: 12, upgradeBlueprints: { firepower: 1, missiles: 1 } },
+      groundObjectives: [{ kind: "carrier", count: 1, hp: 260 }, { kind: "aa", count: 2, hp: 52 }],
       difficulty: 4,
       playerSprite: "usSbd",
       enemyScoutSprite: "jpJake",
@@ -503,6 +548,8 @@ const storyCampaigns: Record<StoryFaction, StoryMission[]> = {
       objective: "守住岛上机场，压制夜间袭扰机群。",
       target: 18,
       reward: 460,
+      rewardItems: { credits: 460, materials: 15, upgradeBlueprints: { fuelTank: 1 } },
+      groundObjectives: [{ kind: "command", count: 1, hp: 170 }, { kind: "aa", count: 2, hp: 58 }],
       difficulty: 5,
       playerSprite: "usF4f",
       enemyScoutSprite: "jpJake",
@@ -517,6 +564,8 @@ const storyCampaigns: Record<StoryFaction, StoryMission[]> = {
       objective: "拦截大规模舰载机攻击，保护航母特混舰队。",
       target: 22,
       reward: 560,
+      rewardItems: { credits: 560, materials: 20, upgradeBlueprints: { engine: 1, ammo: 1 } },
+      groundObjectives: [{ kind: "carrier", count: 1, hp: 300 }, { kind: "aa", count: 3, hp: 64 }],
       difficulty: 7,
       playerSprite: "usF4f",
       enemyScoutSprite: "jpJake",
@@ -533,6 +582,7 @@ const storyCampaigns: Record<StoryFaction, StoryMission[]> = {
       objective: "完成远航编队演练，清除暴露航线的侦察机。",
       target: 7,
       reward: 180,
+      rewardItems: { credits: 180, materials: 4 },
       difficulty: 1,
       playerSprite: "jpZero",
       enemyScoutSprite: "usPby",
@@ -547,6 +597,8 @@ const storyCampaigns: Record<StoryFaction, StoryMission[]> = {
       objective: "护送攻击队进入目标空域，压制港区防空战机。",
       target: 11,
       reward: 250,
+      rewardItems: { credits: 250, materials: 8, upgradeBlueprints: { firepower: 1 } },
+      groundObjectives: [{ kind: "port", count: 2, hp: 150 }, { kind: "aa", count: 3, hp: 52 }],
       difficulty: 2,
       playerSprite: "jpZero",
       enemyScoutSprite: "usPby",
@@ -561,6 +613,8 @@ const storyCampaigns: Record<StoryFaction, StoryMission[]> = {
       objective: "搜索英军舰队，击退拦截机群并保障舰队机动。",
       target: 13,
       reward: 320,
+      rewardItems: { credits: 320, materials: 10, upgradeBlueprints: { fuelTank: 1 } },
+      groundObjectives: [{ kind: "carrier", count: 1, hp: 220 }],
       difficulty: 3,
       playerSprite: "jpZero",
       enemyScoutSprite: "usPby",
@@ -575,6 +629,8 @@ const storyCampaigns: Record<StoryFaction, StoryMission[]> = {
       objective: "掩护航母甲板整备，阻止敌方鱼雷机逼近。",
       target: 16,
       reward: 390,
+      rewardItems: { credits: 390, materials: 13, upgradeBlueprints: { missiles: 1 } },
+      groundObjectives: [{ kind: "carrier", count: 1, hp: 260 }, { kind: "aa", count: 2, hp: 58 }],
       difficulty: 4,
       playerSprite: "jpZero",
       enemyScoutSprite: "usPby",
@@ -589,6 +645,8 @@ const storyCampaigns: Record<StoryFaction, StoryMission[]> = {
       objective: "突入岛上机场空域，压制美军增援航线。",
       target: 19,
       reward: 480,
+      rewardItems: { credits: 480, materials: 16, upgradeBlueprints: { armor: 1, ammo: 1 } },
+      groundObjectives: [{ kind: "command", count: 1, hp: 180 }, { kind: "aa", count: 3, hp: 62 }],
       difficulty: 5,
       playerSprite: "jpVal",
       enemyScoutSprite: "usPby",
@@ -603,6 +661,8 @@ const storyCampaigns: Record<StoryFaction, StoryMission[]> = {
       objective: "拦截舰队防空圈外的攻击机，掩护主力舰撤退。",
       target: 23,
       reward: 570,
+      rewardItems: { credits: 570, materials: 22, upgradeBlueprints: { engine: 1, speed: 1 } },
+      groundObjectives: [{ kind: "carrier", count: 1, hp: 310 }, { kind: "aa", count: 3, hp: 70 }],
       difficulty: 7,
       playerSprite: "jpZero",
       enemyScoutSprite: "usPby",
@@ -678,6 +738,7 @@ const initialHud: HudState = {
   fuelEmptyTimer: 0,
   fuelEmptyLimit: 10,
   earnedCredits: 0,
+  earnedRewardText: "",
   allies: 0,
   radarRange: 0,
   radarBlips: [],
@@ -1379,6 +1440,13 @@ const supportSpriteSlots: Record<SupportSpriteKey, { col: number; row: number }>
   elite: { col: 3, row: 0 },
 };
 
+const groundTargetSpriteSlots: Record<GroundSpriteKey, { col: number; row: number }> = {
+  carrier: { col: 0, row: 0 },
+  aa: { col: 1, row: 0 },
+  port: { col: 0, row: 1 },
+  command: { col: 1, row: 1 },
+};
+
 function getPlanePreviewClass(planeId: PlaneId) {
   return `plane-preview plane-${planeId}`;
 }
@@ -2019,6 +2087,61 @@ function getSpawnInterval(state: GameState) {
   return Math.max(0.92, 1.48 - state.difficulty * 0.03);
 }
 
+function getGroundTargetStats(kind: GroundTargetKind, difficulty: number) {
+  if (kind === "carrier") return { hp: 230 + difficulty * 18, radius: 96, points: 260, fireRange: 1380, fireInterval: 0.72, power: 8.5 };
+  if (kind === "port") return { hp: 150 + difficulty * 12, radius: 72, points: 150, fireRange: 1120, fireInterval: 0.86, power: 7.8 };
+  if (kind === "command") return { hp: 170 + difficulty * 13, radius: 62, points: 180, fireRange: 980, fireInterval: 1.05, power: 7 };
+  return { hp: 54 + difficulty * 6, radius: 34, points: 85, fireRange: 1220, fireInterval: 0.64, power: 6.7 };
+}
+
+function getStageGroundObjectives(stage: number): GroundObjectiveSpec[] {
+  if (stage < 3) return [];
+  if (stage % 5 === 0) return [{ kind: "carrier", count: 1 }, { kind: "aa", count: Math.min(4, 2 + Math.floor(stage / 8)) }];
+  if (stage % 3 === 0) return [{ kind: "command", count: 1 }, { kind: "aa", count: Math.min(3, 1 + Math.floor(stage / 9)) }];
+  if (stage >= 8 && stage % 4 === 0) return [{ kind: "port", count: 1 }, { kind: "aa", count: 2 }];
+  return [];
+}
+
+function getMissionGroundObjectives(state: GameState) {
+  if (state.mode === "story") return state.storyMission?.groundObjectives ?? [];
+  if (state.mode === "stage") return getStageGroundObjectives(state.stage);
+  return [];
+}
+
+function initializeMissionTargets(state: GameState) {
+  if (state.groundTargets.length > 0) return;
+  const specs = getMissionGroundObjectives(state);
+  const expanded = specs.flatMap((spec) => Array.from({ length: spec.count ?? 1 }, () => spec));
+  if (expanded.length === 0) return;
+
+  const playerDir = direction(state.player.angle);
+  const playerPerp = { x: -playerDir.y, y: playerDir.x };
+  const centerOffset = (expanded.length - 1) / 2;
+  expanded.forEach((spec, index) => {
+    const stats = getGroundTargetStats(spec.kind, state.difficulty);
+    const lateral = (index - centerOffset) * 360 + randomBetween(-80, 80);
+    const forward = 1220 + index * 145 + (spec.kind === "carrier" ? 280 : 0);
+    const angle = normalizeAngle(state.player.angle + randomBetween(-0.22, 0.22));
+    const move = spec.kind === "carrier" ? direction(angle + randomBetween(-0.08, 0.08)) : { x: 0, y: 0 };
+    const hp = spec.hp ?? stats.hp;
+    state.groundTargets.push({
+      id: makeId(state),
+      x: state.player.x + playerDir.x * forward + playerPerp.x * lateral,
+      y: state.player.y + playerDir.y * forward + playerPerp.y * lateral,
+      angle,
+      vx: move.x * (spec.kind === "carrier" ? 24 : 0),
+      vy: move.y * (spec.kind === "carrier" ? 24 : 0),
+      hp,
+      maxHp: hp,
+      radius: stats.radius,
+      kind: spec.kind,
+      fireTimer: randomBetween(0.7, 1.8),
+      progressValue: 1,
+      points: stats.points,
+    });
+  });
+}
+
 function getMaxHp(upgrades: UpgradeState, planeId: PlaneId) {
   return getPlaneMeta(planeId).baseHp + upgrades.armor * 42;
 }
@@ -2031,8 +2154,20 @@ function getMagazineSize(planeId: PlaneId) {
   return 72 + getPlaneTier(planeId) * 8;
 }
 
+function getWw2MagazineSize(sprite: Ww2SpriteKey) {
+  if (isWw2Bomber(sprite)) return 360;
+  if (isWw2AttackPlane(sprite)) return 260;
+  return sprite === "usP40" || sprite === "usF4f" ? 300 : 240;
+}
+
 function getMaxCannonAmmo(upgrades: UpgradeState, planeId: PlaneId) {
   return 620 + getPlaneTier(planeId) * 70 + upgrades.ammo * 240;
+}
+
+function getWw2CannonAmmo(sprite: Ww2SpriteKey) {
+  if (isWw2Bomber(sprite)) return 2600;
+  if (isWw2AttackPlane(sprite)) return 1800;
+  return sprite === "usP40" || sprite === "usF4f" ? 2400 : 1900;
 }
 
 function getPlayerFireInterval(state: GameState) {
@@ -2171,8 +2306,8 @@ function createGameState(
   const effectiveUpgrades = storyMission ? { ...defaultUpgrades } : upgrades;
   const maxHp = getMaxHp(effectiveUpgrades, effectivePlane);
   const maxFuel = getMaxFuel(effectiveUpgrades, effectivePlane);
-  const maxAmmoReserve = getMaxCannonAmmo(effectiveUpgrades, effectivePlane);
-  const magazineSize = getMagazineSize(effectivePlane);
+  const maxAmmoReserve = storyMission ? getWw2CannonAmmo(storyMission.playerSprite) : getMaxCannonAmmo(effectiveUpgrades, effectivePlane);
+  const magazineSize = storyMission ? getWw2MagazineSize(storyMission.playerSprite) : getMagazineSize(effectivePlane);
   const speedStats = getSpeedStats(effectiveUpgrades, effectivePlane);
   const playerRadius = storyMission
     ? isWw2Bomber(storyMission.playerSprite)
@@ -2223,6 +2358,7 @@ function createGameState(
     },
     allies: [],
     enemies: [],
+    groundTargets: [],
     bullets: [],
     tankers: [],
     explosions: [],
@@ -2239,6 +2375,7 @@ function createGameState(
     difficulty: storyMission ? storyMission.difficulty : mode === "stage" ? getStageDifficulty(stage) : 1,
     spawnTimer: storyMission ? 0.22 : 0.85,
     earnedCredits: 0,
+    earnedRewardText: "",
     rewardClaimed: false,
     shake: 0,
     time: 0,
@@ -2267,6 +2404,8 @@ function createGameState(
     ally.ww2Sprite = storyMission?.playerSprite;
     state.allies.push(ally);
   }
+
+  initializeMissionTargets(state);
 
   return state;
 }
@@ -2332,6 +2471,7 @@ function snapshot(state: GameState): HudState {
     fuelEmptyTimer,
     fuelEmptyLimit,
     earnedCredits: state.earnedCredits,
+    earnedRewardText: state.earnedRewardText,
     allies: state.allies.length,
     radarRange,
     radarBlips,
@@ -2368,6 +2508,8 @@ function addSmoke(state: GameState, x: number, y: number, radius = 16, color = "
     maxLife: life,
     color,
     opacity,
+    rotation: randomBetween(0, Math.PI * 2),
+    wobble: randomBetween(-1, 1),
   });
 }
 
@@ -2876,17 +3018,17 @@ function chooseNearestEnemy(state: GameState, source: Vector) {
 }
 
 function chooseMissileTarget(state: GameState, shooter: Vector & { angle: number }) {
-  let forwardTarget: Aircraft | null = null;
+  let forwardTarget: Aircraft | GroundTarget | null = null;
   let forwardScore = Number.POSITIVE_INFINITY;
 
-  for (const enemy of state.enemies) {
-    const dist = distance(shooter, enemy);
-    const offBoresight = Math.abs(normalizeAngle(angleTo(shooter, enemy) - shooter.angle));
+  for (const target of [...state.enemies, ...state.groundTargets.filter((item) => !item.destroyed)]) {
+    const dist = distance(shooter, target);
+    const offBoresight = Math.abs(normalizeAngle(angleTo(shooter, target) - shooter.angle));
     if (offBoresight < 2.45 && dist < 3600) {
-      const coneScore = dist * (1 + offBoresight * 0.24);
+      const coneScore = dist * (1 + offBoresight * 0.24) * ("side" in target ? 1 : 0.82);
       if (coneScore < forwardScore) {
         forwardScore = coneScore;
-        forwardTarget = enemy;
+        forwardTarget = target;
       }
     }
   }
@@ -2947,15 +3089,47 @@ function destroyEnemy(state: GameState, enemy: Aircraft) {
   addFloater(state, `+${points}`, enemy.x, enemy.y - 36, "#fde68a");
 }
 
+function destroyGroundTarget(state: GameState, target: GroundTarget) {
+  if (target.destroyed) return;
+  target.destroyed = true;
+  target.sinkTimer = target.kind === "carrier" ? 3.2 : 1.65;
+  target.maxSinkTimer = target.sinkTimer;
+  target.vx *= target.kind === "carrier" ? 0.32 : 0;
+  target.vy *= target.kind === "carrier" ? 0.32 : 0;
+  state.score += target.points;
+  state.stageKills = Math.min(state.stageTarget, state.stageKills + target.progressValue);
+  state.shake = Math.max(state.shake, target.kind === "carrier" ? 22 : 13);
+  addExplosion(state, target.x, target.y, target.kind === "carrier" ? 96 : target.kind === "aa" ? 42 : 68, "#facc15", target.kind === "carrier" ? 0.86 : 0.5);
+  for (let index = 0; index < (target.kind === "carrier" ? 8 : 4); index += 1) {
+    addSmoke(
+      state,
+      target.x + randomBetween(-target.radius * 0.5, target.radius * 0.5),
+      target.y + randomBetween(-target.radius * 0.38, target.radius * 0.38),
+      randomBetween(target.kind === "carrier" ? 18 : 12, target.kind === "carrier" ? 34 : 22),
+      "30,41,59",
+      target.kind === "carrier" ? 0.42 : 0.34,
+    );
+  }
+  addFloater(state, target.kind === "carrier" ? "航母沉没" : target.kind === "aa" ? "防空炮摧毁" : "目标摧毁", target.x, target.y - target.radius, "#fde68a");
+}
+
+function damageGroundTarget(state: GameState, target: GroundTarget, amount: number, x: number, y: number) {
+  if (target.destroyed) return;
+  target.hp = Math.max(0, target.hp - amount);
+  addExplosion(state, x, y, 18, "#fde68a", 0.18);
+  if (target.hp <= 0) destroyGroundTarget(state, target);
+}
+
 function detonateMissile(state: GameState, missile: Projectile) {
   const blastRadius = missile.blastRadius ?? 72;
   addExplosion(state, missile.x, missile.y, blastRadius, "#facc15", 0.62);
-  const targets = [...state.enemies];
+  const targets = [...state.enemies, ...state.groundTargets.filter((target) => !target.destroyed)];
   for (const enemy of targets) {
     const dist = distance(missile, enemy);
     if (dist <= blastRadius + enemy.radius) {
       const falloff = clamp(1 - dist / (blastRadius + enemy.radius), 0.34, 1);
-      damageAircraft(state, enemy, missile.power * falloff, missile.x, missile.y);
+      if ("side" in enemy) damageAircraft(state, enemy, missile.power * falloff, missile.x, missile.y);
+      else damageGroundTarget(state, enemy, missile.power * falloff * 2.1, missile.x, missile.y);
     }
   }
 }
@@ -3081,7 +3255,10 @@ function updateProjectiles(state: GameState, dt: number) {
     if (bullet.kind === "missile" && bullet.owner !== "enemy") {
       const currentAngle = Math.atan2(bullet.vy, bullet.vx);
       const missileSeeker = { x: bullet.x, y: bullet.y, angle: currentAngle };
-      let lockedTarget = state.enemies.find((enemy) => enemy.id === bullet.targetId) ?? chooseMissileTarget(state, missileSeeker);
+      let lockedTarget =
+        state.enemies.find((enemy) => enemy.id === bullet.targetId) ??
+        state.groundTargets.find((target) => target.id === bullet.targetId && !target.destroyed) ??
+        chooseMissileTarget(state, missileSeeker);
       if (lockedTarget) {
         const targetBearing = angleTo(bullet, lockedTarget);
         if (Math.abs(normalizeAngle(targetBearing - currentAngle)) > 2.72 && (bullet.age ?? 0) > 0.45) {
@@ -3092,11 +3269,11 @@ function updateProjectiles(state: GameState, dt: number) {
       if (lockedTarget) {
         bullet.targetId = lockedTarget.id;
         const speed = Math.hypot(bullet.vx, bullet.vy);
-        const targetDir = direction(lockedTarget.angle);
+        const targetDir = "side" in lockedTarget ? direction(lockedTarget.angle) : { x: lockedTarget.vx, y: lockedTarget.vy };
         const leadTime = clamp(distance(bullet, lockedTarget) / Math.max(1, speed), 0.1, 0.55);
         const predicted = {
-          x: lockedTarget.x + targetDir.x * lockedTarget.speed * leadTime * 0.42,
-          y: lockedTarget.y + targetDir.y * lockedTarget.speed * leadTime * 0.42,
+          x: lockedTarget.x + ("side" in lockedTarget ? targetDir.x * lockedTarget.speed : targetDir.x) * leadTime * 0.42,
+          y: lockedTarget.y + ("side" in lockedTarget ? targetDir.y * lockedTarget.speed : targetDir.y) * leadTime * 0.42,
         };
         const desiredAngle = angleTo(bullet, predicted);
         const boostLock = clamp(((bullet.age ?? 0) - 0.12) / 0.28, 0.18, 1);
@@ -3144,13 +3321,23 @@ function updateProjectiles(state: GameState, dt: number) {
         }
       }
     } else {
+      let hitTarget = false;
       for (const enemy of state.enemies) {
         if (distance(bullet, enemy) < enemy.radius) {
           used.add(bullet.id);
           if (bullet.kind === "missile") detonateMissile(state, bullet);
           else damageAircraft(state, enemy, bullet.power, bullet.x, bullet.y);
+          hitTarget = true;
           break;
         }
+      }
+      if (hitTarget) continue;
+      for (const target of state.groundTargets) {
+        if (target.destroyed || distance(bullet, target) >= target.radius) continue;
+        used.add(bullet.id);
+        if (bullet.kind === "missile") detonateMissile(state, bullet);
+        else damageGroundTarget(state, target, bullet.power * 1.18, bullet.x, bullet.y);
+        break;
       }
     }
   }
@@ -3362,6 +3549,96 @@ function updateTankers(state: GameState, dt: number) {
   });
 }
 
+function chooseGroundTargetAimTarget(state: GameState, target: GroundTarget) {
+  let best: Aircraft = state.player;
+  let bestDist = distance(target, state.player);
+  for (const ally of state.allies) {
+    if (!isAircraftActive(state, ally)) continue;
+    const dist = distance(target, ally);
+    if (dist < bestDist) {
+      best = ally;
+      bestDist = dist;
+    }
+  }
+  return { aircraft: best, dist: bestDist };
+}
+
+function fireGroundTargetGun(state: GameState, target: GroundTarget) {
+  const stats = getGroundTargetStats(target.kind, state.difficulty);
+  const { aircraft, dist } = chooseGroundTargetAimTarget(state, target);
+  if (dist > stats.fireRange) return false;
+
+  const spread = target.kind === "aa" ? 0.07 : 0.045;
+  const burstCount = target.kind === "aa" ? 2 : 1;
+  for (let index = 0; index < burstCount; index += 1) {
+    const aim = angleTo(target, aircraft) + randomBetween(-spread, spread) + (index - (burstCount - 1) / 2) * 0.035;
+    addBullet(state, "enemy", target.x, target.y, aim, 560 + state.difficulty * 12, stats.power);
+  }
+  return true;
+}
+
+function updateGroundTargets(state: GameState, dt: number) {
+  for (const target of state.groundTargets) {
+    if (target.destroyed) {
+      target.sinkTimer = Math.max(0, (target.sinkTimer ?? 0) - dt);
+      target.x += target.vx * dt;
+      target.y += target.vy * dt;
+      target.vx *= 1 - dt * 0.26;
+      target.vy *= 1 - dt * 0.26;
+      if (Math.random() < dt * (target.kind === "carrier" ? 6.5 : 4)) {
+        addSmoke(
+          state,
+          target.x + randomBetween(-target.radius * 0.44, target.radius * 0.44),
+          target.y + randomBetween(-target.radius * 0.32, target.radius * 0.32),
+          randomBetween(target.kind === "carrier" ? 16 : 10, target.kind === "carrier" ? 30 : 18),
+          "30,41,59",
+          target.kind === "carrier" ? 0.34 : 0.28,
+        );
+      }
+      if (target.kind === "carrier" && Math.random() < dt * 1.25) {
+        addExplosion(
+          state,
+          target.x + randomBetween(-target.radius * 0.38, target.radius * 0.38),
+          target.y + randomBetween(-target.radius * 0.28, target.radius * 0.28),
+          randomBetween(24, 48),
+          "#fb923c",
+          0.2,
+        );
+      }
+      continue;
+    }
+
+    target.x += target.vx * dt;
+    target.y += target.vy * dt;
+    if (target.kind === "carrier") {
+      target.angle = normalizeAngle(target.angle + Math.sin(state.time * 0.12 + target.id) * 0.014 * dt);
+      const move = direction(target.angle);
+      target.vx += (move.x * 26 - target.vx) * Math.min(1, dt * 0.22);
+      target.vy += (move.y * 26 - target.vy) * Math.min(1, dt * 0.22);
+    }
+
+    if (target.hp < target.maxHp * 0.4 && Math.random() < dt * 1.3) {
+      addSmoke(
+        state,
+        target.x + randomBetween(-target.radius * 0.34, target.radius * 0.34),
+        target.y + randomBetween(-target.radius * 0.25, target.radius * 0.25),
+        randomBetween(7, 15),
+        "30,41,59",
+        0.24,
+      );
+    }
+
+    target.fireTimer -= dt;
+    if (target.fireTimer <= 0) {
+      const fired = fireGroundTargetGun(state, target);
+      const stats = getGroundTargetStats(target.kind, state.difficulty);
+      target.fireTimer = stats.fireInterval + randomBetween(fired ? 0.16 : 0.55, fired ? 0.58 : 1.2);
+    }
+  }
+
+  state.groundTargets = state.groundTargets.filter((target) => !target.destroyed || (target.sinkTimer ?? 0) > 0);
+}
+
 function spawnForMode(state: GameState) {
   const activeCap = getEnemyActiveCap(state);
   if (state.mode === "stage" || state.mode === "story") {
@@ -3407,7 +3684,7 @@ function updateEffects(state: GameState, dt: number) {
 function tryCompleteStage(state: GameState) {
   if ((state.mode !== "stage" && state.mode !== "story") || state.phase !== "running") return;
   const normalDone = state.stageKills >= state.stageTarget;
-  if (normalDone && state.enemies.length === 0) {
+  if (normalDone && state.enemies.length === 0 && state.groundTargets.length === 0) {
     beginPlayerExit(state);
     if (state.score > state.bestScore) {
       state.bestScore = state.score;
@@ -3516,6 +3793,7 @@ function updateGame(state: GameState, dt: number, input: InputState) {
   updateAllies(state, dt);
   updateEnemies(state, dt);
   updateTankers(state, dt);
+  updateGroundTargets(state, dt);
   updateProjectiles(state, dt);
   updateAircraftCollisions(state, dt);
 
@@ -3767,27 +4045,27 @@ function drawWw2AircraftSprite(ctx: CanvasRenderingContext2D, sprites: HTMLImage
 }
 
 const ww2PropellerProfiles: Record<Ww2SpriteKey, PropellerBlurSpec[]> = {
-  usP40: [{ x: 0, y: -0.458, rx: 0.18, ry: 0.025, phase: 0 }],
-  usF4f: [{ x: 0, y: -0.446, rx: 0.17, ry: 0.025, phase: 0.7 }],
-  usSbd: [{ x: 0, y: -0.438, rx: 0.16, ry: 0.024, phase: 1.4 }],
+  usP40: [{ x: 0, y: -0.33, rx: 0.15, ry: 0.022, phase: 0 }],
+  usF4f: [{ x: 0, y: -0.315, rx: 0.145, ry: 0.022, phase: 0.7 }],
+  usSbd: [{ x: 0, y: -0.332, rx: 0.145, ry: 0.021, phase: 1.4 }],
   usB17: [
-    { x: -0.31, y: -0.135, rx: 0.105, ry: 0.019, phase: 0.2 },
-    { x: -0.16, y: -0.145, rx: 0.098, ry: 0.018, phase: 1.1 },
-    { x: 0.16, y: -0.145, rx: 0.098, ry: 0.018, phase: 2 },
-    { x: 0.31, y: -0.135, rx: 0.105, ry: 0.019, phase: 2.8 },
+    { x: -0.29, y: -0.12, rx: 0.09, ry: 0.016, phase: 0.2 },
+    { x: -0.135, y: -0.13, rx: 0.084, ry: 0.015, phase: 1.1 },
+    { x: 0.135, y: -0.13, rx: 0.084, ry: 0.015, phase: 2 },
+    { x: 0.29, y: -0.12, rx: 0.09, ry: 0.016, phase: 2.8 },
   ],
   usPby: [
-    { x: -0.2, y: -0.135, rx: 0.12, ry: 0.02, phase: 0.45 },
-    { x: 0.2, y: -0.135, rx: 0.12, ry: 0.02, phase: 1.65 },
+    { x: -0.2, y: -0.12, rx: 0.1, ry: 0.017, phase: 0.45 },
+    { x: 0.2, y: -0.12, rx: 0.1, ry: 0.017, phase: 1.65 },
   ],
-  jpZero: [{ x: 0, y: -0.45, rx: 0.17, ry: 0.025, phase: 0.3 }],
-  jpOscar: [{ x: 0, y: -0.438, rx: 0.165, ry: 0.024, phase: 0.95 }],
-  jpVal: [{ x: 0, y: -0.43, rx: 0.16, ry: 0.024, phase: 1.6 }],
+  jpZero: [{ x: 0, y: -0.303, rx: 0.145, ry: 0.022, phase: 0.3 }],
+  jpOscar: [{ x: 0, y: -0.32, rx: 0.142, ry: 0.021, phase: 0.95 }],
+  jpVal: [{ x: 0, y: -0.332, rx: 0.142, ry: 0.021, phase: 1.6 }],
   jpBetty: [
-    { x: -0.23, y: -0.122, rx: 0.125, ry: 0.021, phase: 0.6 },
-    { x: 0.23, y: -0.122, rx: 0.125, ry: 0.021, phase: 1.8 },
+    { x: -0.23, y: -0.104, rx: 0.102, ry: 0.017, phase: 0.6 },
+    { x: 0.23, y: -0.104, rx: 0.102, ry: 0.017, phase: 1.8 },
   ],
-  jpJake: [{ x: 0, y: -0.43, rx: 0.155, ry: 0.023, phase: 1.15 }],
+  jpJake: [{ x: 0, y: -0.31, rx: 0.138, ry: 0.02, phase: 1.15 }],
 };
 
 function drawWw2PropellerBlur(ctx: CanvasRenderingContext2D, state: GameState, key: Ww2SpriteKey, size: number) {
@@ -3854,6 +4132,25 @@ function drawSupportSprite(ctx: CanvasRenderingContext2D, sprites: HTMLImageElem
     -size / 2,
     size,
     size,
+  );
+  return true;
+}
+
+function drawGroundTargetSprite(ctx: CanvasRenderingContext2D, sprites: HTMLImageElement | null, key: GroundSpriteKey, width: number, height: number) {
+  if (!sprites?.complete || sprites.naturalWidth <= 0) return false;
+  const slot = groundTargetSpriteSlots[key];
+  const cellWidth = sprites.naturalWidth / GROUND_TARGET_COLUMNS;
+  const cellHeight = sprites.naturalHeight / GROUND_TARGET_ROWS;
+  ctx.drawImage(
+    sprites,
+    slot.col * cellWidth,
+    slot.row * cellHeight,
+    cellWidth,
+    cellHeight,
+    -width / 2,
+    -height / 2,
+    width,
+    height,
   );
   return true;
 }
@@ -4352,6 +4649,109 @@ function drawCannonTracer(ctx: CanvasRenderingContext2D, state: GameState, bulle
   ctx.restore();
 }
 
+function drawSmokePuff(ctx: CanvasRenderingContext2D, state: GameState, smoke: Smoke) {
+  const p = screenPoint(state, smoke.x, smoke.y);
+  const alpha = clamp(smoke.life / smoke.maxLife, 0, 1);
+  const age = 1 - alpha;
+  const baseOpacity = smoke.opacity ?? 0.22;
+  const tone = smoke.color ?? "51,65,85";
+  const offsets = [
+    { x: 0, y: 0, scale: 1.05 },
+    { x: -0.55 + (smoke.wobble ?? 0) * 0.12, y: 0.16, scale: 0.82 },
+    { x: 0.5 + (smoke.wobble ?? 0) * 0.1, y: -0.1, scale: 0.72 },
+  ];
+
+  ctx.save();
+  ctx.globalCompositeOperation = "source-over";
+  ctx.translate(p.x, p.y);
+  ctx.rotate((smoke.rotation ?? 0) + age * 0.45);
+  for (const puff of offsets) {
+    const rx = smoke.radius * (1.35 + age * 0.55) * puff.scale;
+    const ry = smoke.radius * (0.86 + age * 0.36) * puff.scale;
+    const cx = puff.x * smoke.radius * 0.58;
+    const cy = puff.y * smoke.radius * 0.52;
+    const gradient = ctx.createRadialGradient(cx, cy, 1, cx, cy, Math.max(rx, ry));
+    gradient.addColorStop(0, `rgba(248,250,252,${baseOpacity * 0.24 * alpha})`);
+    gradient.addColorStop(0.28, `rgba(${tone},${baseOpacity * 0.92 * alpha})`);
+    gradient.addColorStop(0.72, `rgba(30,41,59,${baseOpacity * 0.46 * alpha})`);
+    gradient.addColorStop(1, `rgba(15,23,42,0)`);
+    ctx.fillStyle = gradient;
+    ctx.beginPath();
+    ctx.ellipse(cx, cy, rx, ry, (smoke.wobble ?? 0) * 0.18, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.restore();
+}
+
+function getGroundTargetDrawSize(target: GroundTarget) {
+  if (target.kind === "carrier") return target.radius * 3.05;
+  if (target.kind === "port") return target.radius * 3.15;
+  if (target.kind === "command") return target.radius * 3.0;
+  return target.radius * 3.25;
+}
+
+function drawGroundTargetFallback(ctx: CanvasRenderingContext2D, target: GroundTarget, size: number) {
+  ctx.fillStyle = target.kind === "carrier" ? "#475569" : target.kind === "aa" ? "#4d7c0f" : "#78716c";
+  ctx.strokeStyle = "rgba(15,23,42,0.5)";
+  ctx.lineWidth = Math.max(1.5, size * 0.012);
+  if (target.kind === "carrier") {
+    drawRoundRect(ctx, -size * 0.15, -size * 0.46, size * 0.3, size * 0.92, size * 0.06);
+    ctx.fill();
+    ctx.stroke();
+    ctx.strokeStyle = "rgba(248,250,252,0.85)";
+    ctx.lineWidth = Math.max(2, size * 0.018);
+    ctx.beginPath();
+    ctx.moveTo(0, -size * 0.35);
+    ctx.lineTo(0, size * 0.34);
+    ctx.stroke();
+    return;
+  }
+  ctx.beginPath();
+  ctx.ellipse(0, 0, size * 0.35, size * 0.28, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.stroke();
+}
+
+function drawGroundTargetAt(ctx: CanvasRenderingContext2D, state: GameState, target: GroundTarget, groundSprites: HTMLImageElement | null) {
+  const p = screenPoint(state, target.x, target.y);
+  const margin = target.radius * 4;
+  if (p.x < -margin || p.x > VIEW_WIDTH + margin || p.y < -margin || p.y > VIEW_HEIGHT + margin) return;
+
+  const size = getGroundTargetDrawSize(target);
+  const sinkAlpha = target.destroyed ? clamp((target.sinkTimer ?? 0) / Math.max(0.1, target.maxSinkTimer ?? 1), 0, 1) : 1;
+  const sinkProgress = target.destroyed ? 1 - sinkAlpha : 0;
+
+  ctx.save();
+  if (target.destroyed) {
+    ctx.globalAlpha = 0.34 * sinkAlpha;
+    ctx.fillStyle = "rgba(14,116,144,0.5)";
+    ctx.beginPath();
+    ctx.ellipse(p.x, p.y + size * 0.05, size * 0.34, size * 0.11, target.angle, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.globalAlpha = 1;
+  }
+
+  ctx.translate(p.x, p.y + sinkProgress * size * 0.1);
+  ctx.rotate(target.kind === "carrier" ? target.angle + Math.PI / 2 : target.angle);
+  ctx.globalAlpha = target.destroyed ? 0.82 * sinkAlpha : 1;
+  const squash = target.kind === "carrier" ? 1 - sinkProgress * 0.22 : 1 - sinkProgress * 0.12;
+  ctx.scale(1 - sinkProgress * 0.08, squash);
+  if (!drawGroundTargetSprite(ctx, groundSprites, target.kind, size, size)) drawGroundTargetFallback(ctx, target, size);
+  ctx.restore();
+
+  if (!target.destroyed && target.hp < target.maxHp) {
+    const barWidth = Math.min(120, size * 0.62);
+    ctx.save();
+    ctx.fillStyle = "rgba(15,23,42,0.58)";
+    drawRoundRect(ctx, p.x - barWidth / 2, p.y - size * 0.42, barWidth, 6, 3);
+    ctx.fill();
+    ctx.fillStyle = target.kind === "carrier" ? "#f97316" : "#facc15";
+    drawRoundRect(ctx, p.x - barWidth / 2, p.y - size * 0.42, barWidth * clamp(target.hp / target.maxHp, 0, 1), 6, 3);
+    ctx.fill();
+    ctx.restore();
+  }
+}
+
 function drawGame(
   ctx: CanvasRenderingContext2D,
   state: GameState,
@@ -4359,6 +4759,7 @@ function drawGame(
   ww2Sprites: HTMLImageElement | null,
   weaponSprites: HTMLImageElement | null,
   supportSprites: HTMLImageElement | null,
+  groundSprites: HTMLImageElement | null,
   terrain: HTMLImageElement | null,
   storyTerrain: HTMLImageElement | null,
   airport: HTMLImageElement | null,
@@ -4369,14 +4770,8 @@ function drawGame(
   ctx.save();
   ctx.translate(shakeX, shakeY);
 
-  for (const smoke of state.smokes) {
-    const p = screenPoint(state, smoke.x, smoke.y);
-    const alpha = clamp(smoke.life / smoke.maxLife, 0, 1);
-    ctx.fillStyle = `rgba(${smoke.color ?? "51,65,85"},${(smoke.opacity ?? 0.22) * alpha})`;
-    ctx.beginPath();
-    ctx.ellipse(p.x, p.y, smoke.radius * 1.5, smoke.radius, 0, 0, Math.PI * 2);
-    ctx.fill();
-  }
+  for (const target of state.groundTargets) drawGroundTargetAt(ctx, state, target, groundSprites);
+  for (const smoke of state.smokes) drawSmokePuff(ctx, state, smoke);
 
   for (const tanker of state.tankers) drawTanker(ctx, state, tanker, supportSprites);
   for (const wreck of state.wrecks) drawWreckAt(ctx, state, wreck, sprites, ww2Sprites);
@@ -4476,6 +4871,7 @@ export default function Home() {
   const ww2SpritesRef = useRef<HTMLImageElement | null>(null);
   const weaponSpritesRef = useRef<HTMLImageElement | null>(null);
   const supportSpritesRef = useRef<HTMLImageElement | null>(null);
+  const groundSpritesRef = useRef<HTMLImageElement | null>(null);
   const terrainRef = useRef<HTMLImageElement | null>(null);
   const storyTerrainRef = useRef<HTMLImageElement | null>(null);
   const airportRef = useRef<HTMLImageElement | null>(null);
@@ -4619,6 +5015,12 @@ export default function Home() {
       supportSpritesRef.current = supportImage;
     };
 
+    const groundTargetImage = new Image();
+    groundTargetImage.src = GROUND_TARGET_SPRITES_URL;
+    groundTargetImage.onload = () => {
+      groundSpritesRef.current = groundTargetImage;
+    };
+
     const terrainImage = new Image();
     terrainImage.src = TERRAIN_TILE_URL;
     terrainImage.onload = () => {
@@ -4641,6 +5043,7 @@ export default function Home() {
       ww2AircraftImage.onload = null;
       weaponImage.onload = null;
       supportImage.onload = null;
+      groundTargetImage.onload = null;
       terrainImage.onload = null;
       storyTerrainImage.onload = null;
       airportImage.onload = null;
@@ -5014,6 +5417,7 @@ export default function Home() {
           ww2SpritesRef.current,
           weaponSpritesRef.current,
           supportSpritesRef.current,
+          groundSpritesRef.current,
           terrainRef.current,
           storyTerrainRef.current,
           airportRef.current,
