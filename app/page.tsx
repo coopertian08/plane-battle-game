@@ -60,7 +60,7 @@ const RESETTABLE_SAVE_KEYS = [
   STORY_PROGRESS_KEY,
 ] as const;
 
-type GamePhase = "menu" | "hangar" | "takeoff" | "running" | "paused" | "playerDying" | "over" | "stageClear";
+type GamePhase = "menu" | "hangar" | "takeoff" | "running" | "paused" | "playerDying" | "playerExiting" | "over" | "stageClear";
 type GameMode = "endless" | "stage" | "story";
 type HomeTab = "battle" | "upgrade" | "shop" | "inventory";
 type TutorialKey = "controls" | "missile" | "refuel";
@@ -99,6 +99,14 @@ type GunPortSpec = {
   x: number;
   y: number;
   power: number;
+};
+
+type PropellerBlurSpec = {
+  x: number;
+  y: number;
+  rx: number;
+  ry: number;
+  phase: number;
 };
 
 type InventoryState = {
@@ -271,6 +279,8 @@ type Smoke = {
   radius: number;
   life: number;
   maxLife: number;
+  color?: string;
+  opacity?: number;
 };
 
 type Wreck = {
@@ -336,6 +346,9 @@ type GameState = {
   rewardClaimed: boolean;
   shake: number;
   time: number;
+  phaseTimer: number;
+  finishCameraX?: number;
+  finishCameraY?: number;
   takeoffTimer: number;
   takeoffDuration: number;
   nextId: number;
@@ -2229,6 +2242,7 @@ function createGameState(
     rewardClaimed: false,
     shake: 0,
     time: 0,
+    phaseTimer: 0,
     takeoffTimer: 0,
     takeoffDuration: 3.35,
     nextId: 0,
@@ -2341,7 +2355,7 @@ function addExplosion(state: GameState, x: number, y: number, radius: number, co
   });
 }
 
-function addSmoke(state: GameState, x: number, y: number, radius = 16) {
+function addSmoke(state: GameState, x: number, y: number, radius = 16, color = "51,65,85", opacity = 0.22) {
   const life = randomBetween(0.7, 1.3);
   state.smokes.push({
     id: makeId(state),
@@ -2352,6 +2366,8 @@ function addSmoke(state: GameState, x: number, y: number, radius = 16) {
     radius,
     life,
     maxLife: life,
+    color,
+    opacity,
   });
 }
 
@@ -2366,6 +2382,69 @@ function addFloater(state: GameState, text: string, x: number, y: number, color 
     maxLife: 1,
     color,
   });
+}
+
+function isFinishFlightPhase(phase: GamePhase) {
+  return phase === "playerDying" || phase === "playerExiting";
+}
+
+function setFinishCamera(state: GameState) {
+  state.finishCameraX = state.player.x;
+  state.finishCameraY = state.player.y;
+}
+
+function emitAircraftDamageSmoke(state: GameState, aircraft: Aircraft, dt: number, force = false) {
+  const hpRatio = clamp(aircraft.hp / Math.max(1, aircraft.maxHp), 0, 1);
+  const rate = force ? 16 : hpRatio < 0.18 ? 8.5 : hpRatio < 0.36 ? 4.4 : 0;
+  if (rate <= 0 || Math.random() >= dt * rate) return;
+
+  const size = getAircraftDrawSize(aircraft);
+  const back = direction(aircraft.angle + Math.PI);
+  const perp = { x: -back.y, y: back.x };
+  const sideDrift = randomBetween(-size * 0.09, size * 0.09);
+  const radius = force ? randomBetween(14, 24) : hpRatio < 0.18 ? randomBetween(10, 18) : randomBetween(7, 13);
+  const opacity = force ? 0.38 : hpRatio < 0.18 ? 0.33 : 0.27;
+  addSmoke(
+    state,
+    aircraft.x + back.x * size * 0.34 + perp.x * sideDrift,
+    aircraft.y + back.y * size * 0.34 + perp.y * sideDrift,
+    radius,
+    "15,23,42",
+    opacity,
+  );
+}
+
+function beginPlayerDying(state: GameState, player: Aircraft) {
+  if (state.phase === "playerDying" || state.phase === "over") return;
+  state.phase = "playerDying";
+  state.phaseTimer = 0;
+  setFinishCamera(state);
+  player.hp = 0;
+  player.throttle = -0.3;
+  state.bullets = state.bullets.filter((bullet) => bullet.owner !== "enemy");
+  state.tankers = [];
+  state.shake = Math.max(state.shake, 24);
+  addExplosion(state, player.x, player.y, 58, "#fb923c", 0.45);
+  for (let index = 0; index < 7; index += 1) {
+    emitAircraftDamageSmoke(state, player, 1, true);
+  }
+  if (state.score > state.bestScore) {
+    state.bestScore = state.score;
+    saveBestScore(state.score);
+  }
+}
+
+function beginPlayerExit(state: GameState) {
+  if (state.phase !== "running") return;
+  state.phase = "playerExiting";
+  state.phaseTimer = 0;
+  setFinishCamera(state);
+  state.bullets = state.bullets.filter((bullet) => bullet.owner !== "enemy");
+  state.tankers = [];
+  state.shake = Math.max(state.shake, 8);
+  state.player.bank = 0;
+  state.player.throttle = 1;
+  addFloater(state, state.mode === "story" ? "任务完成" : "关卡完成", state.player.x, state.player.y - 110, "#bef264");
 }
 
 const ww2GunProfiles: Record<Ww2SpriteKey, GunPortSpec[]> = {
@@ -2730,23 +2809,20 @@ function spawnRegularEnemy(state: GameState) {
         : 650;
   const station = getEnemyAttackFormationPoint(state, player, slot, preferred, kind);
   const entrySide = slot % 2 === 0 ? -1 : 1;
-  const entryDir = storyEntry
-    ? direction(player.angle + Math.PI + entrySide * Math.PI * 0.58 + randomBetween(-0.16, 0.16))
-    : direction(player.angle + Math.PI + randomBetween(-0.42, 0.42));
-  const entryDistance = storyEntry ? randomBetween(140, 280) : randomBetween(360, 760);
-  const jitter = storyEntry ? 48 : 120;
   const playerDir = direction(player.angle);
   const playerPerp = { x: -playerDir.y, y: playerDir.x };
-  const contactSide = slot % 2 === 0 ? -1 : 1;
-  const spawnX = firstStoryContact
-    ? player.x + playerPerp.x * contactSide * randomBetween(380, 470) + playerDir.x * randomBetween(110, 170)
+  const entryDir = direction(player.angle + Math.PI + randomBetween(-0.42, 0.42));
+  const entryDistance = storyEntry ? randomBetween(760, 1120) : randomBetween(360, 760);
+  const jitter = storyEntry ? 90 : 120;
+  const storyForward = firstStoryContact ? randomBetween(760, 940) : entryDistance;
+  const storyLateral = entrySide * randomBetween(firstStoryContact ? 520 : 560, firstStoryContact ? 720 : 820);
+  const spawnX = storyEntry
+    ? player.x + playerDir.x * storyForward + playerPerp.x * storyLateral + randomBetween(-jitter, jitter)
     : station.x + entryDir.x * entryDistance + randomBetween(-jitter, jitter);
-  const spawnY = firstStoryContact
-    ? player.y + playerPerp.y * contactSide * randomBetween(380, 470) + playerDir.y * randomBetween(110, 170)
+  const spawnY = storyEntry
+    ? player.y + playerDir.y * storyForward + playerPerp.y * storyLateral + randomBetween(-jitter, jitter)
     : station.y + entryDir.y * entryDistance + randomBetween(-jitter, jitter);
-  const spawnAngle = firstStoryContact
-    ? normalizeAngle(player.angle - contactSide * Math.PI / 2 + randomBetween(-0.12, 0.12))
-    : angleTo({ x: spawnX, y: spawnY }, station);
+  const spawnAngle = angleTo({ x: spawnX, y: spawnY }, station);
   const enemy = createAircraft(
     state,
     "enemy",
@@ -2766,7 +2842,7 @@ function spawnRegularEnemy(state: GameState) {
             : 292 + difficulty * 5,
     radius,
   );
-  enemy.spawnWarmup = storyEntry ? randomBetween(0.45, 0.9) : randomBetween(1.15, 1.9);
+  enemy.spawnWarmup = storyEntry ? randomBetween(1.8, 2.6) : randomBetween(1.15, 1.9);
   enemy.variant = getEnemyVariantForKind(state, kind, enemy.id);
   enemy.wingSlot = slot;
   enemy.ww2Sprite = storySprite;
@@ -2906,15 +2982,7 @@ function damageAircraft(
       addExplosion(state, target.x, target.y, 54, "#fb923c", 0.5);
       state.allies = state.allies.filter((ally) => ally.id !== target.id);
     } else {
-      state.phase = "playerDying";
-      state.bullets = state.bullets.filter((bullet) => bullet.owner !== "enemy");
-      state.shake = Math.max(state.shake, 24);
-      addExplosion(state, target.x, target.y, 88, "#fb923c", 0.85);
-      for (let index = 0; index < 8; index += 1) addSmoke(state, target.x, target.y, randomBetween(16, 28));
-      if (state.score > state.bestScore) {
-        state.bestScore = state.score;
-        saveBestScore(state.score);
-      }
+      beginPlayerDying(state, target);
     }
   }
 }
@@ -3144,6 +3212,7 @@ function updatePlayer(state: GameState, dt: number, input: InputState) {
     addFloater(state, "换弹", player.x, player.y - 62, "#dbeafe");
   }
   if (input.firing && player.fireTimer <= 0 && (player.fuel ?? 0) > 0) fireGuns(state, player, "player");
+  emitAircraftDamageSmoke(state, player, dt);
 }
 
 function updateAllies(state: GameState, dt: number) {
@@ -3174,6 +3243,7 @@ function updateAllies(state: GameState, dt: number) {
     const move = direction(ally.angle);
     ally.x += move.x * ally.speed * dt;
     ally.y += move.y * ally.speed * dt;
+    emitAircraftDamageSmoke(state, ally, dt);
     ally.fireTimer -= dt;
     if (target && formationDist < 620 && distance(target, ally) < 920 && Math.abs(normalizeAngle(angleTo(ally, target) - ally.angle)) < 0.24 && ally.fireTimer <= 0) {
       fireGuns(state, ally, "ally");
@@ -3239,6 +3309,7 @@ function updateEnemies(state: GameState, dt: number) {
     const dir = direction(enemy.angle);
     enemy.x += dir.x * enemy.speed * dt;
     enemy.y += dir.y * enemy.speed * dt;
+    emitAircraftDamageSmoke(state, enemy, dt);
     enemy.fireTimer -= dt;
     updateEnemyBurst(state, enemy, dt);
 
@@ -3337,15 +3408,53 @@ function tryCompleteStage(state: GameState) {
   if ((state.mode !== "stage" && state.mode !== "story") || state.phase !== "running") return;
   const normalDone = state.stageKills >= state.stageTarget;
   if (normalDone && state.enemies.length === 0) {
-    state.phase = "stageClear";
-    state.bullets = state.bullets.filter((bullet) => bullet.owner !== "enemy");
-    state.tankers = [];
-    state.shake = Math.max(state.shake, 12);
-    addFloater(state, state.mode === "story" ? "任务完成" : "关卡完成", state.player.x, state.player.y - 110, "#bef264");
+    beginPlayerExit(state);
     if (state.score > state.bestScore) {
       state.bestScore = state.score;
       saveBestScore(state.score);
     }
+  }
+}
+
+function updatePlayerDying(state: GameState, dt: number) {
+  const player = state.player;
+  state.phaseTimer += dt;
+  player.bank = (player.bank ?? 0) + (0.82 - (player.bank ?? 0)) * Math.min(1, dt * 1.4);
+  player.throttle = -0.45;
+  player.speed += (Math.max(145, player.speed * 0.62) - player.speed) * Math.min(1, dt * 0.55);
+  player.angle = normalizeAngle(player.angle + (0.12 + Math.sin(state.phaseTimer * 1.7) * 0.035) * dt);
+  const dir = direction(player.angle);
+  player.x += dir.x * Math.max(120, player.speed) * dt;
+  player.y += dir.y * Math.max(120, player.speed) * dt;
+  emitAircraftDamageSmoke(state, player, dt, true);
+  if (Math.random() < dt * 1.4) {
+    const size = getAircraftDrawSize(player);
+    const back = direction(player.angle + Math.PI);
+    addExplosion(state, player.x + back.x * size * 0.18, player.y + back.y * size * 0.18, randomBetween(14, 24), "#fb923c", 0.18);
+  }
+  if (state.phaseTimer >= 3.4) {
+    state.phase = "over";
+    state.phaseTimer = 0;
+  }
+}
+
+function updatePlayerExiting(state: GameState, dt: number) {
+  const player = state.player;
+  const speedStats = getSpeedStats(state.upgrades, state.selectedPlane);
+  state.phaseTimer += dt;
+  player.bank = (player.bank ?? 0) + (0 - (player.bank ?? 0)) * Math.min(1, dt * 4);
+  player.throttle = 1;
+  player.speed += (speedStats.maxSpeed * 1.08 - player.speed) * Math.min(1, dt * 0.9);
+  const dir = direction(player.angle);
+  player.x += dir.x * player.speed * dt;
+  player.y += dir.y * player.speed * dt;
+  updateAllies(state, dt);
+
+  const p = screenPoint(state, player.x, player.y);
+  const offscreen = p.x < -220 || p.x > VIEW_WIDTH + 220 || p.y < -220 || p.y > VIEW_HEIGHT + 220;
+  if (offscreen || state.phaseTimer >= 4.2) {
+    state.phase = "stageClear";
+    state.phaseTimer = 0;
   }
 }
 
@@ -3386,7 +3495,12 @@ function updateGame(state: GameState, dt: number, input: InputState) {
   updateEffects(state, dt);
 
   if (state.phase === "playerDying") {
-    if (state.explosions.length === 0) state.phase = "over";
+    updatePlayerDying(state, dt);
+    return;
+  }
+
+  if (state.phase === "playerExiting") {
+    updatePlayerExiting(state, dt);
     return;
   }
 
@@ -3408,18 +3522,15 @@ function updateGame(state: GameState, dt: number, input: InputState) {
   state.spawnTimer -= dt;
   if (state.spawnTimer <= 0) spawnForMode(state);
 
-  if (Math.random() < dt * 1.2) {
-    const back = direction(state.player.angle + Math.PI);
-    addSmoke(state, state.player.x + back.x * 36, state.player.y + back.y * 36, 7);
-  }
-
   tryCompleteStage(state);
 }
 
 function screenPoint(state: GameState, x: number, y: number) {
+  const cameraX = isFinishFlightPhase(state.phase) ? state.finishCameraX ?? state.player.x : state.player.x;
+  const cameraY = isFinishFlightPhase(state.phase) ? state.finishCameraY ?? state.player.y : state.player.y;
   return {
-    x: x - state.player.x + VIEW_WIDTH / 2,
-    y: y - state.player.y + VIEW_HEIGHT / 2,
+    x: x - cameraX + VIEW_WIDTH / 2,
+    y: y - cameraY + VIEW_HEIGHT / 2,
   };
 }
 
@@ -3653,6 +3764,59 @@ function drawWw2AircraftSprite(ctx: CanvasRenderingContext2D, sprites: HTMLImage
     size,
   );
   return true;
+}
+
+const ww2PropellerProfiles: Record<Ww2SpriteKey, PropellerBlurSpec[]> = {
+  usP40: [{ x: 0, y: -0.458, rx: 0.18, ry: 0.025, phase: 0 }],
+  usF4f: [{ x: 0, y: -0.446, rx: 0.17, ry: 0.025, phase: 0.7 }],
+  usSbd: [{ x: 0, y: -0.438, rx: 0.16, ry: 0.024, phase: 1.4 }],
+  usB17: [
+    { x: -0.31, y: -0.135, rx: 0.105, ry: 0.019, phase: 0.2 },
+    { x: -0.16, y: -0.145, rx: 0.098, ry: 0.018, phase: 1.1 },
+    { x: 0.16, y: -0.145, rx: 0.098, ry: 0.018, phase: 2 },
+    { x: 0.31, y: -0.135, rx: 0.105, ry: 0.019, phase: 2.8 },
+  ],
+  usPby: [
+    { x: -0.2, y: -0.135, rx: 0.12, ry: 0.02, phase: 0.45 },
+    { x: 0.2, y: -0.135, rx: 0.12, ry: 0.02, phase: 1.65 },
+  ],
+  jpZero: [{ x: 0, y: -0.45, rx: 0.17, ry: 0.025, phase: 0.3 }],
+  jpOscar: [{ x: 0, y: -0.438, rx: 0.165, ry: 0.024, phase: 0.95 }],
+  jpVal: [{ x: 0, y: -0.43, rx: 0.16, ry: 0.024, phase: 1.6 }],
+  jpBetty: [
+    { x: -0.23, y: -0.122, rx: 0.125, ry: 0.021, phase: 0.6 },
+    { x: 0.23, y: -0.122, rx: 0.125, ry: 0.021, phase: 1.8 },
+  ],
+  jpJake: [{ x: 0, y: -0.43, rx: 0.155, ry: 0.023, phase: 1.15 }],
+};
+
+function drawWw2PropellerBlur(ctx: CanvasRenderingContext2D, state: GameState, key: Ww2SpriteKey, size: number) {
+  const profile = ww2PropellerProfiles[key];
+  ctx.save();
+  ctx.globalCompositeOperation = "screen";
+  for (const propeller of profile) {
+    const pulse = 0.94 + Math.sin(state.time * 70 + propeller.phase) * 0.04;
+    const bladeAngle = state.time * 44 + propeller.phase;
+    ctx.save();
+    ctx.translate(propeller.x * size, propeller.y * size);
+    ctx.rotate(Math.sin(bladeAngle) * 0.08);
+    ctx.fillStyle = "rgba(226,232,240,0.28)";
+    ctx.beginPath();
+    ctx.ellipse(0, 0, propeller.rx * size * pulse, propeller.ry * size, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = "rgba(248,250,252,0.34)";
+    ctx.lineWidth = Math.max(1, size * 0.012);
+    ctx.beginPath();
+    ctx.moveTo(-propeller.rx * size * 0.82, 0);
+    ctx.lineTo(propeller.rx * size * 0.82, 0);
+    ctx.stroke();
+    ctx.fillStyle = "rgba(15,23,42,0.35)";
+    ctx.beginPath();
+    ctx.ellipse(0, 0, Math.max(2, size * 0.024), Math.max(1.4, size * 0.012), 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+  ctx.restore();
 }
 
 function drawWeaponSprite(ctx: CanvasRenderingContext2D, sprites: HTMLImageElement | null, key: WeaponSpriteKey, width: number, height: number) {
@@ -4032,6 +4196,7 @@ function drawAircraftAt(
   const drewSprite =
     (aircraft.ww2Sprite ? drawWw2AircraftSprite(ctx, ww2Sprites, aircraft.ww2Sprite, size) : false) ||
     drawAircraftSprite(ctx, sprites, getAircraftSpriteKey(aircraft.kind, aircraft.side, aircraft.variant), size);
+  if (aircraft.ww2Sprite && drewSprite) drawWw2PropellerBlur(ctx, state, aircraft.ww2Sprite, size);
   if (!drewSprite) drawJet(ctx, aircraft.kind, aircraft.side);
   ctx.restore();
 
@@ -4207,7 +4372,7 @@ function drawGame(
   for (const smoke of state.smokes) {
     const p = screenPoint(state, smoke.x, smoke.y);
     const alpha = clamp(smoke.life / smoke.maxLife, 0, 1);
-    ctx.fillStyle = `rgba(51,65,85,${0.22 * alpha})`;
+    ctx.fillStyle = `rgba(${smoke.color ?? "51,65,85"},${(smoke.opacity ?? 0.22) * alpha})`;
     ctx.beginPath();
     ctx.ellipse(p.x, p.y, smoke.radius * 1.5, smoke.radius, 0, 0, Math.PI * 2);
     ctx.fill();
@@ -4422,6 +4587,13 @@ export default function Home() {
     if (phase !== "running" || hud.ammoReserve <= 0) mouseFireRef.current = false;
   }, [hud.ammoReserve, phase]);
 
+  const resetCombatInput = useCallback(() => {
+    keysRef.current.clear();
+    mouseFireRef.current = false;
+    joystickRef.current = { throttle: 0, turn: 0, firing: false };
+    setJoystick({ x: 0, y: 0, active: false });
+  }, []);
+
   useEffect(() => {
     const aircraftImage = new Image();
     aircraftImage.src = AIRCRAFT_SPRITES_URL;
@@ -4477,6 +4649,7 @@ export default function Home() {
 
   const startRun = useCallback(
     (mode: GameMode, stageNumber = campaignStage, storyFaction: StoryFaction | null = null) => {
+      resetCombatInput();
       const safeStoryFaction = storyFaction ?? "usa";
       const safeStage = mode === "stage" || mode === "story" ? normalizeStageNumber(stageNumber) : 1;
       const safePlane = planeCatalog.some((planeItem) => planeItem.id === selectedPlane) && unlockedPlanes[selectedPlane] ? selectedPlane : getFirstUnlockedPlane(unlockedPlanes);
@@ -4511,7 +4684,7 @@ export default function Home() {
       setPhase("takeoff");
       setHud(snapshot(state));
     },
-    [campaignStage, planeUpgrades, selectedPlane, unlockedPlanes],
+    [campaignStage, planeUpgrades, resetCombatInput, selectedPlane, unlockedPlanes],
   );
 
   const startStageGame = useCallback(() => startRun("stage", campaignStage), [campaignStage, startRun]);
@@ -4541,17 +4714,18 @@ export default function Home() {
   }, [campaignStage, hud.mode, hud.stage, hud.storyFaction, startRun, storyProgress]);
 
   const returnToMenu = useCallback(() => {
+    resetCombatInput();
     const state = createGameState(Math.max(readBestScore(), gameRef.current?.bestScore ?? 0), upgrades, selectedPlane);
     state.phase = "menu";
     gameRef.current = state;
     setHomeTab("battle");
     setPhase("menu");
     setHud(snapshot(state));
-  }, [selectedPlane, upgrades]);
+  }, [resetCombatInput, selectedPlane, upgrades]);
 
   const openHangar = useCallback(() => {
     const state = gameRef.current;
-    if (!state || state.phase === "running" || state.phase === "playerDying") return;
+    if (!state || state.phase === "running" || isFinishFlightPhase(state.phase)) return;
     state.phase = "hangar";
     setHomeTab("upgrade");
     setPhase("hangar");
@@ -4560,7 +4734,7 @@ export default function Home() {
 
   const openHomeTab = useCallback((tab: HomeTab) => {
     const state = gameRef.current;
-    if (!state || state.phase === "running" || state.phase === "playerDying") return;
+    if (!state || state.phase === "running" || isFinishFlightPhase(state.phase)) return;
     state.phase = tab === "battle" ? "menu" : "hangar";
     setHomeTab(tab);
     setPhase(state.phase);
@@ -4573,7 +4747,7 @@ export default function Home() {
       setSelectedPlane(planeId);
       saveSelectedPlane(planeId);
       const state = gameRef.current;
-      if (state && state.phase !== "running" && state.phase !== "playerDying") {
+      if (state && state.phase !== "running" && !isFinishFlightPhase(state.phase)) {
         const preview = createGameState(Math.max(readBestScore(), state.bestScore), planeUpgrades[planeId] ?? defaultUpgrades, planeId);
         preview.phase = state.phase;
         preview.earnedCredits = state.earnedCredits;
@@ -4609,7 +4783,7 @@ export default function Home() {
       saveUnlockedPlanes(nextUnlocked);
       saveSelectedPlane(planeId);
       const state = gameRef.current;
-      if (state && state.phase !== "running" && state.phase !== "playerDying") {
+      if (state && state.phase !== "running" && !isFinishFlightPhase(state.phase)) {
         const preview = createGameState(Math.max(readBestScore(), state.bestScore), planeUpgrades[planeId] ?? defaultUpgrades, planeId);
         preview.phase = state.phase;
         preview.earnedCredits = state.earnedCredits;
@@ -4717,11 +4891,14 @@ export default function Home() {
   const togglePause = useCallback(() => {
     const state = gameRef.current;
     if (!state) return;
-    if (state.phase === "running") state.phase = "paused";
-    else if (state.phase === "paused") state.phase = "running";
-    else if (state.phase === "menu" || state.phase === "hangar" || state.phase === "over" || state.phase === "stageClear") startEndlessGame();
+    if (state.phase === "running") {
+      state.phase = "paused";
+      resetCombatInput();
+    } else if (state.phase === "paused") {
+      state.phase = "running";
+    }
     syncHud();
-  }, [startEndlessGame, syncHud]);
+  }, [resetCombatInput, syncHud]);
 
   const useMissile = useCallback(() => {
     const state = gameRef.current;
@@ -4874,7 +5051,10 @@ export default function Home() {
         event.preventDefault();
         callTanker();
       }
-      if (key === "p" && !event.repeat) togglePause();
+      if ((key === "escape" || key === "p") && !event.repeat) {
+        event.preventDefault();
+        togglePause();
+      }
       if (key === "enter" && !event.repeat) startEndlessGame();
     };
     const handleKeyUp = (event: KeyboardEvent) => keysRef.current.delete(event.key.toLowerCase());
@@ -4929,8 +5109,8 @@ export default function Home() {
   const fuelPercent = clamp(hud.fuel / Math.max(1, hud.maxFuel), 0, 1) * 100;
   const ammoPercent = clamp(hud.ammoReserve / Math.max(1, hud.maxAmmoReserve), 0, 1) * 100;
   const fuelCrashCountdown = hud.fuel <= 0 ? Math.max(0, Math.ceil(hud.fuelEmptyLimit - hud.fuelEmptyTimer)) : 0;
-  const showBattleUi = phase === "running" || phase === "paused" || phase === "playerDying";
-  const showPanel = phase !== "running" && phase !== "takeoff" && phase !== "playerDying";
+  const showBattleUi = phase === "running" || phase === "paused" || isFinishFlightPhase(phase);
+  const showPanel = phase !== "running" && phase !== "takeoff" && !isFinishFlightPhase(phase);
   const showMainMenu = phase === "menu";
   const showHangar = phase === "hangar";
   const showOver = phase === "over";
@@ -5100,6 +5280,22 @@ export default function Home() {
                   <i style={{ width: `${hpPercent}%` }} />
                 </div>
               </div>
+
+              {(phase === "running" || phase === "paused") && (
+                <button
+                  className={["pause-toggle", phase === "paused" ? "is-paused" : ""].filter(Boolean).join(" ")}
+                  type="button"
+                  onClick={togglePause}
+                  aria-label={phase === "paused" ? "继续战斗" : "暂停战斗"}
+                  title="ESC"
+                >
+                  <span aria-hidden="true">
+                    <i />
+                    <i />
+                  </span>
+                  <strong>{phase === "paused" ? "继续" : "暂停"}</strong>
+                </button>
+              )}
             </>
           )}
 
@@ -5427,6 +5623,9 @@ export default function Home() {
                 </div>
               </div>
               <div className="action-cluster">
+                <button className="pause-action" type="button" onClick={togglePause}>
+                  暂停
+                </button>
                 <button className="tanker-action" type="button" onClick={callTanker} disabled={hud.tankerCallsLeft <= 0}>
                   加油
                 </button>

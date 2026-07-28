@@ -298,6 +298,67 @@ button {
   font-weight: 800;
 }
 
+.pause-toggle {
+  position: absolute;
+  top: max(10px, env(safe-area-inset-top));
+  right: min(244px, calc(100vw - 90px));
+  z-index: 9;
+  min-width: 74px;
+  height: 42px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: 1px solid rgba(226, 232, 240, 0.42);
+  border-radius: 8px;
+  background: rgba(15, 23, 42, 0.68);
+  color: #e0f2fe;
+  box-shadow: 0 14px 32px rgba(2, 6, 23, 0.26);
+  backdrop-filter: blur(14px);
+  pointer-events: auto;
+  cursor: pointer;
+}
+
+.pause-toggle span {
+  width: 18px;
+  height: 18px;
+  display: inline-grid;
+  grid-template-columns: repeat(2, 5px);
+  justify-content: center;
+  gap: 4px;
+}
+
+.pause-toggle i {
+  display: block;
+  border-radius: 2px;
+  background: currentColor;
+}
+
+.pause-toggle strong {
+  color: #fff;
+  font-size: 13px;
+  line-height: 1;
+  font-weight: 900;
+}
+
+.pause-toggle.is-paused span {
+  width: 0;
+  height: 0;
+  display: block;
+  border-top: 9px solid transparent;
+  border-bottom: 9px solid transparent;
+  border-left: 14px solid currentColor;
+}
+
+.pause-toggle.is-paused i {
+  display: none;
+}
+
+.pause-toggle:hover {
+  border-color: rgba(125, 211, 252, 0.68);
+  background: rgba(14, 116, 144, 0.74);
+}
+
 .mission-brief {
   position: absolute;
   top: max(96px, calc(env(safe-area-inset-top) + 86px));
@@ -1457,6 +1518,11 @@ button {
   background: rgba(248, 250, 252, 0.92);
 }
 
+.action-cluster .pause-action {
+  background: rgba(15, 23, 42, 0.88);
+  color: #e0f2fe;
+}
+
 @media (hover: none) and (pointer: coarse) {
   .mobile-controls {
     display: flex;
@@ -1497,6 +1563,10 @@ button {
   .engine-panel strong,
   .engine-panel small {
     font-size: 10px;
+  }
+
+  .pause-toggle {
+    display: none;
   }
 
   .mission-brief {
