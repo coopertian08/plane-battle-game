@@ -152,6 +152,8 @@ test("keeps the finished game free of starter preview code", async () => {
   assert.match(page, /type Ww2SpriteKey = "usP40" \| "usF4f" \| "usSbd" \| "usB17" \| "usPby" \| "jpZero" \| "jpOscar" \| "jpVal" \| "jpBetty" \| "jpJake"/);
   assert.match(page, /type UpgradeKey = "firepower" \| "missiles" \| "armor" \| "fuelTank" \| "engine" \| "speed" \| "tanker" \| "ammo"/);
   assert.match(page, /type EnemyKind = "scout" \| "fighter" \| "heavy" \| "stealth" \| "tank"/);
+  assert.match(page, /type GunPort/);
+  assert.match(page, /type GunPortSpec/);
   assert.match(page, /type PlaneUpgradeState/);
   assert.match(page, /type InventoryState/);
   assert.match(page, /type DailyCheckinState/);
@@ -297,7 +299,15 @@ test("keeps the finished game free of starter preview code", async () => {
   assert.match(page, /ammo:\s*clamp\(Number\(upgrades\?\.ammo\)/);
   assert.match(page, /type WeaponSpriteSlot/);
   assert.match(page, /crop:\s*\[204, 227, 59, 166\]/);
+  assert.match(page, /const ww2GunProfiles/);
+  assert.match(page, /usP40:\s*\[/);
+  assert.match(page, /jpZero:\s*\[/);
+  assert.match(page, /function getWw2GunPorts/);
+  assert.match(page, /function getModernGunPorts/);
   assert.match(page, /getGunPorts/);
+  assert.match(page, /aircraft\.ww2Sprite\) return getWw2GunPorts/);
+  assert.match(page, /plane\.gunBarrels === 2/);
+  assert.match(page, /anchor\.x - spread/);
   assert.match(page, /getMissileRackPort/);
   assert.match(page, /chooseMissileTarget/);
   assert.match(page, /offBoresight < 2\.45 && dist < 3600/);

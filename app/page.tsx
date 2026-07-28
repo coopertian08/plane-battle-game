@@ -88,6 +88,19 @@ type EnginePort = {
   lengthScale?: number;
 };
 
+type GunPort = {
+  x: number;
+  y: number;
+  angle: number;
+  powerScale: number;
+};
+
+type GunPortSpec = {
+  x: number;
+  y: number;
+  power: number;
+};
+
 type InventoryState = {
   materials: number;
   planeBlueprints: PlaneBlueprintState;
@@ -2355,17 +2368,101 @@ function addFloater(state: GameState, text: string, x: number, y: number, color 
   });
 }
 
-function getGunPorts(state: GameState, aircraft: Aircraft) {
-  const size = getAircraftDrawSize(aircraft);
+const ww2GunProfiles: Record<Ww2SpriteKey, GunPortSpec[]> = {
+  usP40: [
+    { x: -0.36, y: 0.14, power: 0.36 },
+    { x: -0.27, y: 0.145, power: 0.36 },
+    { x: -0.18, y: 0.15, power: 0.36 },
+    { x: 0.18, y: 0.15, power: 0.36 },
+    { x: 0.27, y: 0.145, power: 0.36 },
+    { x: 0.36, y: 0.14, power: 0.36 },
+  ],
+  usF4f: [
+    { x: -0.34, y: 0.15, power: 0.38 },
+    { x: -0.24, y: 0.158, power: 0.38 },
+    { x: -0.15, y: 0.166, power: 0.38 },
+    { x: 0.15, y: 0.166, power: 0.38 },
+    { x: 0.24, y: 0.158, power: 0.38 },
+    { x: 0.34, y: 0.15, power: 0.38 },
+  ],
+  usSbd: [
+    { x: -0.04, y: 0.39, power: 0.56 },
+    { x: 0.04, y: 0.39, power: 0.56 },
+  ],
+  usB17: [
+    { x: -0.12, y: 0.28, power: 0.32 },
+    { x: -0.04, y: 0.42, power: 0.32 },
+    { x: 0.04, y: 0.42, power: 0.32 },
+    { x: 0.12, y: 0.28, power: 0.32 },
+  ],
+  usPby: [
+    { x: -0.045, y: 0.38, power: 0.46 },
+    { x: 0.045, y: 0.38, power: 0.46 },
+  ],
+  jpZero: [
+    { x: -0.24, y: 0.18, power: 0.78 },
+    { x: 0.24, y: 0.18, power: 0.78 },
+    { x: -0.04, y: 0.42, power: 0.36 },
+    { x: 0.04, y: 0.42, power: 0.36 },
+  ],
+  jpOscar: [
+    { x: -0.04, y: 0.42, power: 0.56 },
+    { x: 0.04, y: 0.42, power: 0.56 },
+  ],
+  jpVal: [
+    { x: -0.04, y: 0.39, power: 0.52 },
+    { x: 0.04, y: 0.39, power: 0.52 },
+  ],
+  jpBetty: [
+    { x: -0.11, y: 0.28, power: 0.3 },
+    { x: -0.04, y: 0.4, power: 0.3 },
+    { x: 0.04, y: 0.4, power: 0.3 },
+    { x: 0.11, y: 0.28, power: 0.3 },
+  ],
+  jpJake: [{ x: 0, y: 0.38, power: 0.52 }],
+};
+
+function makeGunPort(size: number, spec: GunPortSpec): GunPort {
+  return {
+    x: size * spec.x,
+    y: -size * spec.y,
+    angle: 0,
+    powerScale: spec.power,
+  };
+}
+
+function getWw2GunPorts(size: number, sprite: Ww2SpriteKey): GunPort[] {
+  return ww2GunProfiles[sprite].map((spec) => makeGunPort(size, spec));
+}
+
+function getModernGunPorts(size: number, plane: PlaneMeta): GunPort[] {
   const noseY = -size * 0.43;
-  if (aircraft.side === "enemy") {
-    return [{ x: 0, y: noseY, angle: 0, powerScale: 1 }];
+  const anchor =
+    plane.gunMount === "leftIntake"
+      ? { x: -size * 0.055, y: -size * 0.34 }
+      : plane.gunMount === "rightRoot"
+        ? { x: size * 0.068, y: -size * 0.34 }
+        : { x: 0, y: noseY };
+  const powerScale = plane.gunCaliber >= 30 ? 1.18 : plane.gunBarrels === 2 ? 0.66 : 1;
+
+  if (plane.gunBarrels === 2) {
+    const spread = plane.gunMount === "belly" ? size * 0.024 : size * 0.016;
+    return [
+      { x: anchor.x - spread, y: anchor.y, angle: 0, powerScale },
+      { x: anchor.x + spread, y: anchor.y, angle: 0, powerScale },
+    ];
   }
 
-  const plane = getPlaneMeta(isPlaneId(aircraft.kind) ? aircraft.kind : state.selectedPlane);
-  const powerScale = plane.gunCaliber >= 30 ? 1.22 : plane.gunBarrels === 2 ? 1.12 : 1;
+  return [{ x: anchor.x, y: anchor.y, angle: 0, powerScale }];
+}
 
-  return [{ x: 0, y: noseY, angle: 0, powerScale }];
+function getGunPorts(state: GameState, aircraft: Aircraft): GunPort[] {
+  const size = getAircraftDrawSize(aircraft);
+  if (aircraft.ww2Sprite) return getWw2GunPorts(size, aircraft.ww2Sprite);
+  if (aircraft.side === "enemy") return [{ x: 0, y: -size * 0.43, angle: 0, powerScale: 1 }];
+
+  const plane = getPlaneMeta(isPlaneId(aircraft.kind) ? aircraft.kind : state.selectedPlane);
+  return getModernGunPorts(size, plane);
 }
 
 function getMissileRackPort(aircraft: Aircraft, side: number) {
