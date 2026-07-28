@@ -140,6 +140,7 @@ test("keeps the finished game free of starter preview code", async () => {
   assert.match(page, /drawWeaponSprite/);
   assert.match(page, /drawSupportSprite/);
   assert.match(page, /drawGroundTargetSprite/);
+  assert.match(page, /drawGroundTargetLandPad/);
   assert.match(page, /drawGroundTargetAt/);
   assert.match(page, /updateGroundTargets/);
   assert.match(page, /state\.groundTargets\.length === 0/);
@@ -389,7 +390,7 @@ test("keeps the finished game free of starter preview code", async () => {
   assert.match(page, /drawSky/);
   assert.match(page, /drawTakeoffAirfield/);
   assert.match(page, /drawCloudCluster/);
-  assert.match(page, /TAKEOFF_RUNWAY_WORLD_WIDTH = 4600/);
+  assert.match(page, /TAKEOFF_RUNWAY_WORLD_WIDTH = 1200/);
   assert.match(page, /drawMirroredTerrainTile/);
   assert.match(page, /drawTerrainHaze/);
   assert.match(page, /isOddTile/);

@@ -21,7 +21,7 @@ const TERRAIN_TILE_URL = publicAssetUrl("terrain-tile.png");
 const STORY_TERRAIN_TILE_URL = publicAssetUrl("story-terrain-tile.png");
 const AIRPORT_RUNWAY_URL = publicAssetUrl("airport-runway.png");
 const TERRAIN_TILE_SIZE = 1600;
-const TAKEOFF_RUNWAY_WORLD_WIDTH = 4600;
+const TAKEOFF_RUNWAY_WORLD_WIDTH = 1200;
 const SPRITE_COLUMNS = 10;
 const SPRITE_ROWS = 3;
 const WW2_SPRITE_COLUMNS = 5;
@@ -2088,10 +2088,10 @@ function getSpawnInterval(state: GameState) {
 }
 
 function getGroundTargetStats(kind: GroundTargetKind, difficulty: number) {
-  if (kind === "carrier") return { hp: 230 + difficulty * 18, radius: 96, points: 260, fireRange: 1380, fireInterval: 0.72, power: 8.5 };
-  if (kind === "port") return { hp: 150 + difficulty * 12, radius: 72, points: 150, fireRange: 1120, fireInterval: 0.86, power: 7.8 };
-  if (kind === "command") return { hp: 170 + difficulty * 13, radius: 62, points: 180, fireRange: 980, fireInterval: 1.05, power: 7 };
-  return { hp: 54 + difficulty * 6, radius: 34, points: 85, fireRange: 1220, fireInterval: 0.64, power: 6.7 };
+  if (kind === "carrier") return { hp: 230 + difficulty * 18, radius: 82, points: 260, fireRange: 1380, fireInterval: 0.72, power: 8.5 };
+  if (kind === "port") return { hp: 150 + difficulty * 12, radius: 58, points: 150, fireRange: 1120, fireInterval: 0.86, power: 7.8 };
+  if (kind === "command") return { hp: 170 + difficulty * 13, radius: 50, points: 180, fireRange: 980, fireInterval: 1.05, power: 7 };
+  return { hp: 54 + difficulty * 6, radius: 22, points: 85, fireRange: 1220, fireInterval: 0.64, power: 6.7 };
 }
 
 function getStageGroundObjectives(stage: number): GroundObjectiveSpec[] {
@@ -2116,11 +2116,16 @@ function initializeMissionTargets(state: GameState) {
 
   const playerDir = direction(state.player.angle);
   const playerPerp = { x: -playerDir.y, y: playerDir.x };
-  const centerOffset = (expanded.length - 1) / 2;
   expanded.forEach((spec, index) => {
     const stats = getGroundTargetStats(spec.kind, state.difficulty);
-    const lateral = (index - centerOffset) * 360 + randomBetween(-80, 80);
-    const forward = 1220 + index * 145 + (spec.kind === "carrier" ? 280 : 0);
+    const sameKindIndex = expanded.slice(0, index).filter((item) => item.kind === spec.kind).length;
+    const seaLane = state.storyFaction === "japan" ? 1 : -1;
+    const landLane = -seaLane;
+    const lane = spec.kind === "carrier" ? seaLane : landLane;
+    const laneWidth = spec.kind === "carrier" ? 560 : spec.kind === "aa" ? 420 : 470;
+    const spacing = spec.kind === "aa" ? 120 : 230;
+    const lateral = lane * laneWidth + (sameKindIndex - ((spec.count ?? 1) - 1) / 2) * spacing + randomBetween(-42, 42);
+    const forward = (spec.kind === "carrier" ? 1500 : 1180) + sameKindIndex * (spec.kind === "aa" ? 95 : 140) + randomBetween(-60, 60);
     const angle = normalizeAngle(state.player.angle + randomBetween(-0.22, 0.22));
     const move = spec.kind === "carrier" ? direction(angle + randomBetween(-0.08, 0.08)) : { x: 0, y: 0 };
     const hp = spec.hp ?? stats.hp;
@@ -4684,10 +4689,35 @@ function drawSmokePuff(ctx: CanvasRenderingContext2D, state: GameState, smoke: S
 }
 
 function getGroundTargetDrawSize(target: GroundTarget) {
-  if (target.kind === "carrier") return target.radius * 3.05;
-  if (target.kind === "port") return target.radius * 3.15;
-  if (target.kind === "command") return target.radius * 3.0;
-  return target.radius * 3.25;
+  if (target.kind === "carrier") return target.radius * 2.32;
+  if (target.kind === "port") return target.radius * 2.32;
+  if (target.kind === "command") return target.radius * 2.18;
+  return target.radius * 2.08;
+}
+
+function drawGroundTargetLandPad(ctx: CanvasRenderingContext2D, target: GroundTarget, size: number) {
+  if (target.kind === "carrier") return;
+  const padWidth = target.kind === "aa" ? size * 1.28 : size * 1.18;
+  const padHeight = target.kind === "aa" ? size * 0.92 : size * 1.04;
+  ctx.save();
+  ctx.globalAlpha *= 0.9;
+  ctx.fillStyle = target.kind === "port" ? "rgba(120,113,108,0.64)" : "rgba(76, 98, 52, 0.68)";
+  ctx.beginPath();
+  for (let index = 0; index < 10; index += 1) {
+    const angle = (Math.PI * 2 * index) / 10;
+    const wobble = 0.88 + seededNoise(target.id * 0.31, index * 1.73) * 0.2;
+    const x = Math.cos(angle) * padWidth * 0.5 * wobble;
+    const y = Math.sin(angle) * padHeight * 0.5 * wobble;
+    if (index === 0) ctx.moveTo(x, y);
+    else ctx.lineTo(x, y);
+  }
+  ctx.closePath();
+  ctx.fill();
+  ctx.globalAlpha *= 0.42;
+  ctx.strokeStyle = "rgba(68,64,60,0.7)";
+  ctx.lineWidth = Math.max(1, size * 0.018);
+  ctx.stroke();
+  ctx.restore();
 }
 
 function drawGroundTargetFallback(ctx: CanvasRenderingContext2D, target: GroundTarget, size: number) {
@@ -4736,6 +4766,7 @@ function drawGroundTargetAt(ctx: CanvasRenderingContext2D, state: GameState, tar
   ctx.globalAlpha = target.destroyed ? 0.82 * sinkAlpha : 1;
   const squash = target.kind === "carrier" ? 1 - sinkProgress * 0.22 : 1 - sinkProgress * 0.12;
   ctx.scale(1 - sinkProgress * 0.08, squash);
+  drawGroundTargetLandPad(ctx, target, size);
   if (!drawGroundTargetSprite(ctx, groundSprites, target.kind, size, size)) drawGroundTargetFallback(ctx, target, size);
   ctx.restore();
 
